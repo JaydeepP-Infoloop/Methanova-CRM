@@ -1,8 +1,9 @@
-import { ProjectStatus, Role } from "@methanova/shared-types";
+import { NotificationEntityType, NotificationEventType, ProjectStatus, Role } from "@methanova/shared-types";
 import mongoose from "mongoose";
 import { applyActor, AuditLogModel } from "../../../db/plugins/audit.plugin.js";
 import { assertTransition } from "../../../core/state-machine/index.js";
 import { HttpError } from "../../../utils/http.js";
+import { notifyUsers } from "../../notifications/notifications.service.js";
 import { UserModel } from "../../admin/users/users.model.js";
 import { getOrgLetterhead, projectStatusIsClosed, publicFile } from "../../files/files.service.js";
 import { StoredFileModel } from "../../files/files.model.js";
@@ -88,6 +89,8 @@ export async function updateProject(
   if (payload.name !== undefined) doc.set("name", payload.name);
   if (payload.shortName !== undefined) doc.set("shortName", payload.shortName);
   if (payload.description !== undefined) doc.set("description", payload.description);
+  const previousPmId = doc.get("projectManagerUserId") ? String(doc.get("projectManagerUserId")) : null;
+  let newlyAssignedPmId: string | null = null;
   if (payload.projectManagerUserId !== undefined) {
     if (payload.projectManagerUserId === null) {
       if (doc.get("projectManagerUserId")) {
@@ -96,10 +99,29 @@ export async function updateProject(
     } else {
       await assertEligibleManager(payload.projectManagerUserId);
       doc.set("projectManagerUserId", payload.projectManagerUserId);
+      // This is the real-world trigger point — signMou() never sets this
+      // field at creation, so notifying only from there would never fire.
+      // Skip re-notifying when the PATCH just re-saves the same PM, and skip
+      // notifying someone about assigning themselves.
+      if (payload.projectManagerUserId !== previousPmId && payload.projectManagerUserId !== actorId) {
+        newlyAssignedPmId = payload.projectManagerUserId;
+      }
     }
   }
   applyActor(doc, actorId, "update");
   await doc.save();
+
+  if (newlyAssignedPmId) {
+    await notifyUsers([newlyAssignedPmId], {
+      eventType: NotificationEventType.PROJECT_MANAGER_ASSIGNED,
+      entityType: NotificationEntityType.PROJECT,
+      entityId: id,
+      actorUserId: actorId ?? null,
+      title: "You were assigned as Project Manager",
+      message: String(doc.get("name")),
+    });
+  }
+
   return getProject(id);
 }
 

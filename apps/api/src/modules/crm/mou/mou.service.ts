@@ -204,10 +204,12 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
       );
       notifyProjectId = String(project._id);
       // Only `projectManagerUserId` actually exists on Project today — see
-      // the model. It is never set inside this spin-up (it is assigned later
-      // through the identity PATCH), but this reads the real field rather
-      // than assuming, so the notification starts firing the day a PM is
-      // ever assigned at creation without needing a code change here.
+      // the model. It is never set inside this spin-up in practice — the
+      // real assignment happens afterwards through project.service.ts's
+      // updateProject(), which carries its own notifyUsers() call for
+      // exactly that reason (verified live: this call site alone never
+      // fired). This reads the real field rather than assuming, so nothing
+      // breaks if a future change ever does pass a PM in at creation.
       notifyProjectManagerId = project.get("projectManagerUserId")
         ? String(project.get("projectManagerUserId"))
         : null;
