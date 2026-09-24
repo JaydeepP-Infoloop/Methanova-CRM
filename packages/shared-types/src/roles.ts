@@ -1,0 +1,14 @@
+export const Role = {
+  DIRECTOR: "DIRECTOR",
+  SALES_HEAD_BDE: "SALES_HEAD_BDE",
+  LIAISON_COMPLIANCE_OFFICER: "LIAISON_COMPLIANCE_OFFICER",
+  DESIGN_ENGINEERING_LEAD: "DESIGN_ENGINEERING_LEAD",
+  PROJECT_MANAGER: "PROJECT_MANAGER",
+  SITE_ENGINEER: "SITE_ENGINEER",
+  ACCOUNTS: "ACCOUNTS",
+  CLIENT: "CLIENT",
+} as const;
+
+export type Role = (typeof Role)[keyof typeof Role];
+
+export const ALL_ROLES: Role[] = Object.values(Role);

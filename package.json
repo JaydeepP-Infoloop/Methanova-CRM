@@ -1,0 +1,21 @@
+{
+  "name": "methanova-crm",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CRM, Compliance & Billing platform for Methanova Pvt Ltd",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:up": "docker compose up -d"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "turbo": "^2.3.3"
+  }
+}
