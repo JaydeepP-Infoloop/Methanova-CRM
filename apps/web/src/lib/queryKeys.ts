@@ -59,6 +59,7 @@ export const RESOURCE = {
   masterData: "masterData",
   /** Reference data the CRM reads: geography, lead sources, feedstock, criteria, colleagues. */
   masters: "masters",
+  notifications: "notifications",
 } as const;
 
 export type ResourceName = (typeof RESOURCE)[keyof typeof RESOURCE];

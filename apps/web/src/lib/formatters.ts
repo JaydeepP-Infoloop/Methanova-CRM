@@ -8,6 +8,26 @@ export function formatDate(value: string | Date): string {
   return new Date(value).toLocaleDateString("en-IN");
 }
 
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 365 * 24 * 60 * 60 * 1000],
+  ["month", 30 * 24 * 60 * 60 * 1000],
+  ["day", 24 * 60 * 60 * 1000],
+  ["hour", 60 * 60 * 1000],
+  ["minute", 60 * 1000],
+];
+const relativeFormatter = new Intl.RelativeTimeFormat("en-IN", { numeric: "auto" });
+
+/** "3 hours ago", "yesterday" — for the notification bell's timestamps, not precise enough a use to warrant a date-math dependency. */
+export function formatRelativeTime(value: string | Date): string {
+  const diffMs = new Date(value).getTime() - Date.now();
+  for (const [unit, unitMs] of RELATIVE_UNITS) {
+    if (Math.abs(diffMs) >= unitMs) {
+      return relativeFormatter.format(Math.round(diffMs / unitMs), unit);
+    }
+  }
+  return "just now";
+}
+
 /** 1 crore = 1,00,00,000 rupees = 1e9 paise. */
 const PAISE_PER_CRORE = 1_000_000_000;
 

@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { CommandJump } from "../../components/CommandJump";
 import { IconButton } from "../../components/IconButton";
 import methanovaLogo from "../../assets/methanova-logo-full.png";
+import { NotificationBell } from "../../modules/notifications/components/NotificationBell";
 
 export interface TopbarProps {
   user: { name?: string; email: string; role: string };
@@ -48,6 +49,7 @@ export function Topbar({ user, collapsed, onToggleSidebar }: TopbarProps) {
             ⌘K
           </kbd>
         </Button>
+        <NotificationBell />
       </div>
 
       <div className="flex items-center gap-3">

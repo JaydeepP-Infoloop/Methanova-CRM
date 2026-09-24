@@ -5,6 +5,8 @@ import {
   LeadStage,
   NEW_LEAD_STAGE,
   nextStates,
+  NotificationEntityType,
+  NotificationEventType,
   QualificationDecision,
   type LeadInboxSummaryDto,
 } from "@methanova/shared-types";
@@ -23,6 +25,7 @@ import {
   VillageModel,
 } from "../../admin/master-data/geography.model.js";
 import { HttpError } from "../../../utils/http.js";
+import { notifyUsers } from "../../notifications/notifications.service.js";
 import { ActivityModel } from "../activities/activities.model.js";
 import { classifyFollowUp } from "../activities/activities.service.js";
 import { LeadModel } from "./leads.model.js";
@@ -742,9 +745,13 @@ export async function qualifyLead(
   const session = await mongoose.startSession();
   try {
     let result;
+    let notifyOwnerId: string | null | undefined;
+    let notifyCompanyName: string | undefined;
     await session.withTransaction(async () => {
       const lead = await LeadModel.findById(id).session(session);
       if (!lead) throw new HttpError(404, "Lead not found");
+      notifyOwnerId = lead.get("ownerUserId") ? String(lead.get("ownerUserId")) : null;
+      notifyCompanyName = String(lead.get("companyName"));
 
       const from = String(lead.get("stage"));
       const to =
@@ -786,6 +793,25 @@ export async function qualifyLead(
         session,
       );
     });
+
+    // A side effect of the now-committed decision, not part of the
+    // transaction itself — notifyUsers never throws. An unassigned lead has
+    // no owner to tell.
+    if (notifyOwnerId) {
+      const outcome = input.decision === QualificationDecision.QUALIFIED ? "qualified" : "disqualified";
+      await notifyUsers([notifyOwnerId], {
+        eventType: NotificationEventType.LEAD_QUALIFICATION_DECIDED,
+        entityType: NotificationEntityType.LEAD,
+        entityId: id,
+        actorUserId: actorId ?? null,
+        title: `${notifyCompanyName} was ${outcome}`,
+        message:
+          input.decision === QualificationDecision.DISQUALIFIED
+            ? (input.disqualificationReason?.trim() ?? "No reason given")
+            : "Qualification scoring is complete.",
+      });
+    }
+
     return result;
   } finally {
     await session.endSession();

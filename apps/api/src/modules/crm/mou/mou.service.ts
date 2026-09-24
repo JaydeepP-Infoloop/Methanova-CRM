@@ -8,6 +8,8 @@ import {
   InvoiceStatus,
   LeadStage,
   MouStatus,
+  NotificationEntityType,
+  NotificationEventType,
   ProjectStatus,
   QuotationStatus,
   type Role,
@@ -21,6 +23,7 @@ import { PaymentScheduleModel } from "../../billing/payment-schedules/payment-sc
 import { LicenceModel } from "../../compliance/licences/licences.model.js";
 import { LicenceTypeModel } from "../../admin/master-data/geography.model.js";
 import { MasterDataModel } from "../../admin/master-data/master-data.model.js";
+import { notifyUsers } from "../../notifications/notifications.service.js";
 import { LeadModel } from "../leads/leads.model.js";
 import { ProjectModel } from "../../projects/project/project.model.js";
 import { QuotationModel } from "../quotations/quotations.model.js";
@@ -125,6 +128,9 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
   const session = await mongoose.startSession();
   try {
     let signed;
+    let notifyProjectId: string | undefined;
+    let notifyProjectManagerId: string | null | undefined;
+    let notifyCompanyName: string | undefined;
     await session.withTransaction(async () => {
       const mou = await MouModel.findById(id).session(session);
       if (!mou) throw new HttpError(404, "Mou not found");
@@ -165,6 +171,7 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
 
       const lead = await LeadModel.findById(mou.get("leadId")).session(session);
       if (!lead) throw new HttpError(404, "The MOU's lead could not be found");
+      notifyCompanyName = String(lead.get("companyName"));
 
       const projectCode = await nextNumber(CounterKey.PROJECT, session);
       const invoiceNumber = await nextNumber(CounterKey.INV, session);
@@ -195,6 +202,15 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
         ],
         { session },
       );
+      notifyProjectId = String(project._id);
+      // Only `projectManagerUserId` actually exists on Project today — see
+      // the model. It is never set inside this spin-up (it is assigned later
+      // through the identity PATCH), but this reads the real field rather
+      // than assuming, so the notification starts firing the day a PM is
+      // ever assigned at creation without needing a code change here.
+      notifyProjectManagerId = project.get("projectManagerUserId")
+        ? String(project.get("projectManagerUserId"))
+        : null;
 
       const paymentLines = paymentLinesFromTemplate(
         (quotation.get("paymentTermsTemplate") as { milestones: { description: string; percentage: number; dueOnMilestone?: string | null }[] })
@@ -279,6 +295,23 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
         session,
       );
     });
+
+    // A side effect of the now-committed spin-up, not part of the
+    // transaction itself — notifyUsers never throws. Only
+    // `projectManagerUserId` exists on Project today (see the note above);
+    // siteEngineerId/liaisonOfficerId are not real fields on this model and
+    // are not invented here just to have something to notify.
+    if (notifyProjectId && notifyProjectManagerId) {
+      await notifyUsers([notifyProjectManagerId], {
+        eventType: NotificationEventType.PROJECT_MANAGER_ASSIGNED,
+        entityType: NotificationEntityType.PROJECT,
+        entityId: notifyProjectId,
+        actorUserId: actorId ?? null,
+        title: "You were assigned as Project Manager",
+        message: notifyCompanyName ?? "A new project was created.",
+      });
+    }
+
     return signed ?? (await getMou(id));
   } finally {
     await session.endSession();

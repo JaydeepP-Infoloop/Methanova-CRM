@@ -1,5 +1,5 @@
-export type NotificationId = string;
+import type { z } from "zod";
+import type { listNotificationsQuerySchema } from "./notifications.validation.js";
 
-export interface NotificationListQuery {
-  limit?: number;
-}
+export type NotificationId = string;
+export type ListNotificationsQuery = z.infer<typeof listNotificationsQuerySchema>;

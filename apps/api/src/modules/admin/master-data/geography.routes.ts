@@ -26,6 +26,10 @@ import {
   DEFAULT_MOU_APPROVAL_THRESHOLD_PAISE,
   MOU_APPROVAL_SETTINGS_KEY,
 } from "../../crm/mou/mou.service.js";
+import {
+  DEFAULT_NOTIFICATION_DEFAULTS,
+  NOTIFICATION_DEFAULTS_KEY,
+} from "../../notifications/notifications.service.js";
 
 export const geographyRouter = Router();
 
@@ -213,21 +217,13 @@ geographyRouter.get(
   handle(() => UserModel.find().sort({ name: 1 }).select("name email role").lean()),
 );
 
-export const NOTIFICATION_DEFAULTS_KEY = "notification-defaults";
-const DEFAULT_NOTIFICATIONS = {
-  inAppEnabled: true,
-  emailEnabled: false,
-  taskOverdueToAssignee: true,
-  taskOverdueToProjectManager: true,
-};
-
 geographyRouter.get(
   "/notification-defaults",
   handle(async () => {
     const row = (await MasterDataModel.findOne({ key: NOTIFICATION_DEFAULTS_KEY }).lean()) as
       | { payload?: Record<string, boolean> }
       | null;
-    return { ...DEFAULT_NOTIFICATIONS, ...(row?.payload ?? {}) };
+    return { ...DEFAULT_NOTIFICATION_DEFAULTS, ...(row?.payload ?? {}) };
   }),
 );
 

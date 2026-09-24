@@ -1,9 +1,12 @@
 import { z } from "zod";
 
-export const createNotificationSchema = z.object({
-  notes: z.string().optional(),
-}).passthrough();
+const booleanFlag = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true");
 
-export const updateNotificationSchema = createNotificationSchema.partial();
-
-
+export const listNotificationsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  unreadOnly: booleanFlag,
+});

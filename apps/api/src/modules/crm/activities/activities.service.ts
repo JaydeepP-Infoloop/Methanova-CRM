@@ -1,8 +1,15 @@
-import { ActivityParentType, ActivityType, countsAsFirstResponse } from "@methanova/shared-types";
+import {
+  ActivityParentType,
+  ActivityType,
+  countsAsFirstResponse,
+  NotificationEntityType,
+  NotificationEventType,
+} from "@methanova/shared-types";
 import mongoose from "mongoose";
 import { nextSequence } from "../../../core/counters/index.js";
 import { applyActor, writeAudit } from "../../../db/plugins/audit.plugin.js";
 import { HttpError } from "../../../utils/http.js";
+import { notifyUsers } from "../../notifications/notifications.service.js";
 import { LeadModel } from "../leads/leads.model.js";
 import { ActivityModel } from "./activities.model.js";
 import type { ListActivitiesQuery } from "./activities.types.js";
@@ -203,9 +210,13 @@ export async function createLeadActivity(
   const session = await mongoose.startSession();
   try {
     let created: unknown;
+    let notifyLeadId: string | undefined;
+    let notifyCompanyName: string | undefined;
     await session.withTransaction(async () => {
       const lead = await LeadModel.findById(leadId).session(session);
       if (!lead) throw new HttpError(404, "Lead not found");
+      notifyLeadId = String(lead._id);
+      notifyCompanyName = String(lead.get("companyName"));
 
       // Per-lead running number from the atomic counter, so two people
       // logging at once cannot both take "4".
@@ -283,6 +294,23 @@ export async function createLeadActivity(
         session,
       );
     });
+
+    // A side effect of the now-committed activity, not part of the
+    // transaction itself — notifyUsers never throws, so nothing here needs
+    // its own try/catch. Excludes whoever logged it: you do not need to be
+    // told about a call you were just on.
+    if (notifyLeadId) {
+      const otherParticipants = payload.internalParticipantIds.filter((participantId) => participantId !== actorId);
+      await notifyUsers(otherParticipants, {
+        eventType: NotificationEventType.ACTIVITY_PARTICIPANT_ADDED,
+        entityType: NotificationEntityType.LEAD,
+        entityId: notifyLeadId,
+        actorUserId: actorId ?? null,
+        title: `Added to an activity on ${notifyCompanyName}`,
+        message: payload.summary,
+      });
+    }
+
     return created;
   } finally {
     await session.endSession();
@@ -311,6 +339,19 @@ export async function assignLead(leadId: string, userId: string | null, actorId?
     before: { ownerUserId: previousOwner ? String(previousOwner) : null },
     after: { ownerUserId: userId },
   });
+
+  // Notify the newly assigned user — not on unassign (userId null) and not
+  // when someone assigns the lead to themselves (already know).
+  if (userId && userId !== actorId) {
+    await notifyUsers([userId], {
+      eventType: NotificationEventType.LEAD_ASSIGNED,
+      entityType: NotificationEntityType.LEAD,
+      entityId: String(lead._id),
+      actorUserId: actorId ?? null,
+      title: "A lead was assigned to you",
+      message: String(lead.get("companyName")),
+    });
+  }
 
   return LeadModel.findById(leadId).populate("ownerUserId", "name email");
 }

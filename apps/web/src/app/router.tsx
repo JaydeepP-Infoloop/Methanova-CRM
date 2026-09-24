@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { LeadDetailPage } from "../modules/crm/pages/LeadDetailPage";
 import { MyDayPage } from "../modules/crm/pages/MyDayPage";
+import { NotificationsPage } from "../modules/notifications/pages/NotificationsPage";
 import { ProjectDetailPage } from "../modules/projects/pages/ProjectDetailPage";
 import { Dashboard } from "../modules/reports/pages/Dashboard";
 import { AppShell } from "./layout/AppShell";
@@ -27,6 +28,7 @@ export function AppRouter() {
             declared here for the same reason — neither is a nav destination
             in the section sense. */}
         <Route path="my-day" element={<MyDayPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="crm/leads/:id" element={<LeadDetailPage />} />
         {NAV_SECTIONS.flatMap((section) =>
           section.items.map((item) => <Route key={item.path} path={item.path} element={<item.element />} />),

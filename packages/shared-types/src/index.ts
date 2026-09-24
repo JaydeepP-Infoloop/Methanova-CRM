@@ -8,3 +8,4 @@ export * from "./my-day.js";
 export * from "./qualification.js";
 export * from "./permissions.js";
 export * from "./dto.js";
+export * from "./notifications.js";
