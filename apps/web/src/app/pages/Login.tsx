@@ -5,6 +5,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
+import methanovaLogo from "../../assets/methanova-logo-full.png";
 import { useAuth } from "../providers";
 
 const loginFormSchema = z.object({
@@ -44,8 +45,8 @@ export function Login() {
         className="w-full max-w-sm space-y-4 rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200/70"
       >
         <div>
-          <h1 className="text-lg font-semibold text-methanova-green">Methanova CRM</h1>
-          <p className="text-sm text-slate-500">Sign in to continue</p>
+          <img src={methanovaLogo} alt="Methanova CRM" className="h-14 w-auto" />
+          <p className="mt-2 text-sm text-slate-500">Sign in to continue</p>
         </div>
         <Field label="Email" htmlFor="email" error={errors.email?.message} required>
           <input id="email" type="email" autoComplete="username" {...register("email")} />

@@ -4,6 +4,7 @@ import { useAuth } from "../providers";
 import { Button } from "../../components/Button";
 import { CommandJump } from "../../components/CommandJump";
 import { IconButton } from "../../components/IconButton";
+import methanovaLogo from "../../assets/methanova-logo-full.png";
 
 export interface TopbarProps {
   user: { name?: string; email: string; role: string };
@@ -29,7 +30,8 @@ export function Topbar({ user, collapsed, onToggleSidebar }: TopbarProps) {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <img src={methanovaLogo} alt="Methanova CRM" className="h-8 w-auto shrink-0" />
         <IconButton
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={onToggleSidebar}
