@@ -17,17 +17,21 @@ import { PageHeader } from "../../../components/PagePrimitives";
 import { ResourceTable, type ResourceColumn } from "../../../components/ResourceTable";
 import { Skeleton } from "../../../components/Skeleton";
 import { StatCard } from "../../../components/StatCard";
-import { formatPaise, formatPaiseAsCrore } from "../../../lib/formatters";
+import { StatusPill } from "../../../components/StatusPill";
+import { formatDate, formatPaise, formatPaiseAsCrore } from "../../../lib/formatters";
 import { useLeadSummary } from "../../crm/api/leads.api";
 import { useMyDay } from "../../crm/api/my-day.api";
 import { useDashboard } from "../api/dashboard.api";
 
 /**
- * Billing, compliance and projects stay empty until those modules exist.
- * Invented revenue on this page is worse than a blank panel. The CRM strip,
- * Sales Pipeline and Recent Activity are the exception: they read endpoints
- * that already exist (leads summary, My Day overdue, and the dashboard
- * aggregation below), gated so a role without `crm:READ` never sees a fake 0.
+ * Every panel on this page now reads a real endpoint — leads summary, My
+ * Day, and the single `GET /api/crm/dashboard` aggregation the rest reuse.
+ * Billing, Compliance and Active Projects are each gated on their own
+ * module permission (`billing:READ`/`compliance:READ`/`projects:READ`), not
+ * `crm:READ` — a Sales Head/BDE holds the latter without any of the former.
+ * Invented numbers are still never the fallback: every panel without
+ * permission simply does not render, and every real query that returns
+ * nothing says so in a plain sentence rather than drawing a fake shape.
  */
 const DASHBOARD_SUMMARY_FILTERS = { page: 1, pageSize: 1 };
 
@@ -38,8 +42,8 @@ interface ActiveProjectRow extends Record<string, unknown> {
   _id: string;
   code: string;
   client: string;
-  workPackage: string;
-  plannedEnd: string;
+  workPackage: string | null;
+  plannedEnd: string | null;
   valuePaise: number;
   status: string;
 }
@@ -47,14 +51,29 @@ interface ActiveProjectRow extends Record<string, unknown> {
 const activeProjectColumns: ResourceColumn<ActiveProjectRow>[] = [
   { key: "code", label: "Project", sortable: true },
   { key: "client", label: "Client", sortable: true },
-  { key: "workPackage", label: "Current work package" },
-  { key: "plannedEnd", label: "Planned end", sortable: true },
+  {
+    key: "workPackage",
+    label: "Current work package",
+    render: (row) => row.workPackage ?? "—",
+  },
+  {
+    key: "plannedEnd",
+    label: "Planned end",
+    sortable: true,
+    render: (row) => (row.plannedEnd ? formatDate(row.plannedEnd) : "—"),
+  },
   {
     key: "valuePaise",
     label: "Value",
     align: "right",
     sortable: true,
     render: (row) => formatPaise(row.valuePaise),
+  },
+  {
+    key: "status",
+    label: "Status",
+    sortable: true,
+    render: (row) => <StatusPill value={row.status} />,
   },
 ];
 
@@ -97,6 +116,7 @@ export function Dashboard() {
   const canSeeTeamQueue = Boolean(user && canAccess(user.role, AppModule.crm, AccessLevel.FULL));
   const canReadBilling = Boolean(user && canAccess(user.role, AppModule.billing, AccessLevel.READ));
   const canReadCompliance = Boolean(user && canAccess(user.role, AppModule.compliance, AccessLevel.READ));
+  const canReadProjects = Boolean(user && canAccess(user.role, AppModule.projects, AccessLevel.READ));
 
   const summary = useLeadSummary(DASHBOARD_SUMMARY_FILTERS, { enabled: canReadCrm });
   const myDay = useMyDay(canSeeTeamQueue ? "team" : "mine", { enabled: canReadCrm });
@@ -123,11 +143,21 @@ export function Dashboard() {
   const compliance = dashboard.data?.compliance;
   const complianceBundles = compliance?.byBundle ?? [];
 
+  const activeProjectRows: ActiveProjectRow[] = (dashboard.data?.activeProjects ?? []).map((row) => ({
+    _id: row.id,
+    code: row.code,
+    client: row.client,
+    workPackage: row.workPackageName,
+    plannedEnd: row.plannedEnd,
+    valuePaise: row.valuePaise,
+    status: row.status,
+  }));
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Dashboard"
-        subtitle="Sales figures come from the live lead inbox. Billing, compliance and projects appear once those modules exist."
+        subtitle="Sales, billing, compliance and project figures come from the live data behind each module."
       />
 
       {canReadCrm && (
@@ -328,13 +358,16 @@ export function Dashboard() {
         )}
       </div>
 
-      <Card title="Active projects" bodyPadding={false}>
-        <ResourceTable
-          rows={[] as ActiveProjectRow[]}
-          columns={activeProjectColumns}
-          emptyHint="Projects appear here once an MOU is signed."
-        />
-      </Card>
+      {canReadProjects && (
+        <Card title="Active projects" bodyPadding={false}>
+          <ResourceTable
+            rows={activeProjectRows}
+            columns={activeProjectColumns}
+            isLoading={dashboard.isLoading}
+            emptyHint="Projects appear here once an MOU is signed."
+          />
+        </Card>
+      )}
     </div>
   );
 }

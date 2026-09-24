@@ -9,6 +9,7 @@ import {
 } from "@methanova/shared-types";
 import { getMonthlyInvoicedTotals } from "../../billing/invoices/invoices.service.js";
 import { getComplianceSummary } from "../../compliance/licences/licences.service.js";
+import { getActiveProjectsSummary } from "../../projects/project/project.service.js";
 import { getMonthlyReceiptTotals } from "../../receivables/receipts/receipts.service.js";
 import { listActivities } from "../activities/activities.service.js";
 import { getPipelineByStage } from "../leads/leads.service.js";
@@ -43,26 +44,25 @@ function trailingMonths(count: number): { keys: string[]; since: Date } {
  * The Dashboard's one aggregation call — consolidated into a single round
  * trip from the client rather than one request per panel, fanning out
  * server-side to the real aggregations each domain module already owns
- * (leads, MOU, quotations, invoices, receipts, licences) plus the same flat
- * cross-lead activity query the Activity Log page uses. Active-projects
- * figures are still no part of this: the schema it would need (WorkPackage
- * percentComplete/actualEnd, Project PM/target dates) doesn't exist yet —
- * see MODULE_MAP.md.
+ * (leads, MOU, quotations, invoices, receipts, licences, projects/work
+ * packages) plus the same flat cross-lead activity query the Activity Log
+ * page uses.
  *
  * The route itself only requires `crm:READ` (see `dashboard.routes.ts`), but
- * Billing and Compliance are their own permission-matrix modules — a Sales
- * Head/BDE holds `crm:FULL` and `billing:NONE`/`compliance:NONE`. Those two
- * sections are therefore fetched (and returned) only when the caller's own
- * role actually holds `billing:READ`/`compliance:READ`, computed here from
+ * Billing, Compliance and Projects are their own permission-matrix modules —
+ * a Sales Head/BDE holds `crm:FULL` and `billing:NONE`/`compliance:NONE`.
+ * Those sections are therefore fetched (and returned) only when the
+ * caller's own role actually holds the matching `:READ`, computed here from
  * the role on the verified token, never a client-supplied flag — the same
  * server-side re-derivation My Day's team/mine toggle already does.
  */
 export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
   const canReadBilling = canAccess(actorRole, AppModule.billing, AccessLevel.READ);
   const canReadCompliance = canAccess(actorRole, AppModule.compliance, AccessLevel.READ);
+  const canReadProjects = canAccess(actorRole, AppModule.projects, AccessLevel.READ);
   const { keys: months, since } = trailingMonths(BILLING_TRAILING_MONTHS);
 
-  const [pipeline, mou, quotations, activityPage, invoicedByMonth, collectedByMonth, compliance] =
+  const [pipeline, mou, quotations, activityPage, invoicedByMonth, collectedByMonth, compliance, activeProjects] =
     await Promise.all([
       getPipelineByStage(),
       getMouSummaryByStatus(),
@@ -71,6 +71,7 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
       canReadBilling ? getMonthlyInvoicedTotals(since) : Promise.resolve(new Map<string, number>()),
       canReadBilling ? getMonthlyReceiptTotals(since) : Promise.resolve(new Map<string, number>()),
       canReadCompliance ? getComplianceSummary() : Promise.resolve(EMPTY_COMPLIANCE),
+      canReadProjects ? getActiveProjectsSummary() : Promise.resolve([]),
     ]);
 
   const billing: DashboardBillingMonthDto[] = canReadBilling
@@ -81,5 +82,5 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
       }))
     : [];
 
-  return { pipeline, mou, quotations, recentActivity: activityPage.items, billing, compliance };
+  return { pipeline, mou, quotations, recentActivity: activityPage.items, billing, compliance, activeProjects };
 }

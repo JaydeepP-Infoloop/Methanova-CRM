@@ -44,6 +44,24 @@ export interface DashboardComplianceDto {
   byBundle: DashboardComplianceBundleDto[];
 }
 
+/**
+ * One row per project, newest first. `workPackageName`/`plannedEnd` describe
+ * the project's *current* work package — the first one not yet
+ * COMPLETED/HANDED_OVER, ordered by `sequence` — falling back to the
+ * project's own `targetCommissioningDate` for `plannedEnd` when no work
+ * packages exist yet (the normal state right after signing, since nothing
+ * auto-creates them). `valuePaise` is the accepted MOU's `contractValuePaise`.
+ */
+export interface DashboardActiveProjectDto {
+  id: string;
+  code: string;
+  client: string;
+  status: string;
+  workPackageName: string | null;
+  plannedEnd: string | null;
+  valuePaise: Paise;
+}
+
 export interface DashboardDto {
   pipeline: DashboardPipelineStageDto[];
   mou: DashboardMouStatusDto[];
@@ -52,4 +70,5 @@ export interface DashboardDto {
   recentActivity: ActivityListItemDto[];
   billing: DashboardBillingMonthDto[];
   compliance: DashboardComplianceDto;
+  activeProjects: DashboardActiveProjectDto[];
 }

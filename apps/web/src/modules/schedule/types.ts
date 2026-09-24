@@ -13,6 +13,10 @@ export interface WorkPackageRow extends BaseRecord {
   plannedStart?: string;
   plannedEnd?: string;
   amountPaise: number;
+  /** Stamped automatically the moment this reaches COMPLETED — never set by hand. */
+  actualEnd?: string | null;
+  /** Set once, when moved to ON_HOLD; irrelevant otherwise. */
+  delayReason?: string | null;
 }
 
 export interface ProgressUpdateRow extends BaseRecord {

@@ -1,13 +1,24 @@
-import { NotificationEntityType, NotificationEventType, ProjectStatus, Role } from "@methanova/shared-types";
+import {
+  NotificationEntityType,
+  NotificationEventType,
+  ProjectStatus,
+  Role,
+  WorkPackageStatus,
+  type DashboardActiveProjectDto,
+} from "@methanova/shared-types";
 import mongoose from "mongoose";
 import { applyActor, AuditLogModel } from "../../../db/plugins/audit.plugin.js";
 import { assertTransition } from "../../../core/state-machine/index.js";
 import { HttpError } from "../../../utils/http.js";
+import { MouModel } from "../../crm/mou/mou.model.js";
 import { notifyUsers } from "../../notifications/notifications.service.js";
+import { WorkPackageModel } from "../../schedule/work-packages/work-packages.model.js";
 import { UserModel } from "../../admin/users/users.model.js";
 import { getOrgLetterhead, projectStatusIsClosed, publicFile } from "../../files/files.service.js";
 import { StoredFileModel } from "../../files/files.model.js";
 import { ProjectModel } from "./project.model.js";
+
+const TERMINAL_WORK_PACKAGE_STATUSES: string[] = [WorkPackageStatus.COMPLETED, WorkPackageStatus.HANDED_OVER];
 
 const POPULATE = [
   { path: "projectManagerUserId", select: "name email role" },
@@ -24,6 +35,61 @@ export async function listProjects(opts: { mine?: boolean; userId?: string }) {
     .populate("projectManagerUserId", "name email role")
     .sort({ createdAt: -1 })
     .limit(200);
+}
+
+/**
+ * The Dashboard's Active Projects card. "Current work package" is the first
+ * one not yet COMPLETED/HANDED_OVER, ordered by `sequence` — nothing
+ * auto-creates work packages at MOU-sign (they're built out afterwards, by
+ * the PM, per the SoW's own process), so a freshly signed project honestly
+ * has none yet and falls back to its own `targetCommissioningDate` for
+ * `plannedEnd` rather than showing a blank cell with no date to point to at
+ * all. `valuePaise` is the accepted MOU's `contractValuePaise`, not
+ * recomputed here — `mou.service.ts` already owns that number.
+ */
+export async function getActiveProjectsSummary(limit = 20): Promise<DashboardActiveProjectDto[]> {
+  const projects = await ProjectModel.find({ deletedAt: null }).sort({ createdAt: -1 }).limit(limit).lean();
+  if (projects.length === 0) return [];
+
+  const projectIds = projects.map((project) => project._id);
+  const mouIds = projects.map((project) => project.mouId);
+
+  const [workPackages, mous] = await Promise.all([
+    WorkPackageModel.find({ projectId: { $in: projectIds }, deletedAt: null })
+      .sort({ sequence: 1 })
+      .select("projectId name status sequence plannedEnd")
+      .lean(),
+    MouModel.find({ _id: { $in: mouIds } }).select("contractValuePaise").lean(),
+  ]);
+
+  const mouById = new Map(mous.map((mou) => [String(mou._id), mou]));
+  const workPackagesByProject = new Map<string, typeof workPackages>();
+  for (const workPackage of workPackages) {
+    const key = String(workPackage.projectId);
+    const list = workPackagesByProject.get(key) ?? [];
+    list.push(workPackage);
+    workPackagesByProject.set(key, list);
+  }
+
+  return projects.map((project) => {
+    const ownWorkPackages = workPackagesByProject.get(String(project._id)) ?? [];
+    const current = ownWorkPackages.find(
+      (workPackage) => !TERMINAL_WORK_PACKAGE_STATUSES.includes(String(workPackage.status)),
+    );
+    return {
+      id: String(project._id),
+      code: String(project.code),
+      client: String(project.name),
+      status: String(project.status),
+      workPackageName: current ? String(current.name) : null,
+      plannedEnd: current?.plannedEnd
+        ? new Date(current.plannedEnd).toISOString()
+        : project.targetCommissioningDate
+          ? new Date(project.targetCommissioningDate as Date).toISOString()
+          : null,
+      valuePaise: mouById.get(String(project.mouId))?.contractValuePaise ?? 0,
+    };
+  });
 }
 
 async function loadProject(id: string) {

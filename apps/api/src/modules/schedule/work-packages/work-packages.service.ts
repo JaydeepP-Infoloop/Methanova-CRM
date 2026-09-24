@@ -31,9 +31,24 @@ export async function softDeleteWorkPackage(id: string, actorId?: string) {
   return doc.softDelete(actorId);
 }
 
-export async function transitionWorkPackage(id: string, to: string, actorId?: string) {
+export async function transitionWorkPackage(
+  id: string,
+  to: string,
+  actorId?: string,
+  delayReason?: string | null,
+) {
   const doc = await getWorkPackage(id);
   applyStatus("workPackage", doc as { status: string }, to);
+  // Stamped here, not accepted from the client, so it can only ever reflect
+  // the moment the work package actually reached COMPLETED.
+  if (to === "COMPLETED") {
+    doc.set("actualEnd", new Date());
+  }
+  // Only meaningful on the ON_HOLD move (validation.ts requires it there);
+  // ignored on every other target.
+  if (to === "ON_HOLD" && delayReason?.trim()) {
+    doc.set("delayReason", delayReason.trim());
+  }
   applyActor(doc, actorId, "status_transition");
   return doc.save();
 }
