@@ -4,7 +4,6 @@ import { useAuth } from "../providers";
 import { Button } from "../../components/Button";
 import { CommandJump } from "../../components/CommandJump";
 import { IconButton } from "../../components/IconButton";
-import methanovaLogo from "../../assets/methanova-logo-full.png";
 import { NotificationBell } from "../../modules/notifications/components/NotificationBell";
 
 export interface TopbarProps {
@@ -32,7 +31,6 @@ export function Topbar({ user, collapsed, onToggleSidebar }: TopbarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
       <div className="flex items-center gap-3">
-        <img src={methanovaLogo} alt="Methanova CRM" className="h-8 w-auto shrink-0" />
         <IconButton
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={onToggleSidebar}
@@ -49,7 +47,6 @@ export function Topbar({ user, collapsed, onToggleSidebar }: TopbarProps) {
             ⌘K
           </kbd>
         </Button>
-        <NotificationBell />
       </div>
 
       <div className="flex items-center gap-3">
@@ -57,6 +54,8 @@ export function Topbar({ user, collapsed, onToggleSidebar }: TopbarProps) {
           <p className="text-sm font-medium text-slate-800">{user.name ?? user.email}</p>
           <p className="text-xs text-slate-500">{user.role.replace(/_/g, " ")}</p>
         </div>
+        {/* Immediately before Sign out, so the two most personal controls sit together. */}
+        <NotificationBell />
         <Button variant="secondary" icon={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />} onClick={() => void logout()}>
           Sign out
         </Button>

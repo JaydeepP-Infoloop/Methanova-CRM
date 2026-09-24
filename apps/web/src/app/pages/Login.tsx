@@ -5,6 +5,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
+import loginBackground from "../../assets/login-background.svg";
 import methanovaLogo from "../../assets/methanova-logo-full.png";
 import { useAuth } from "../providers";
 
@@ -39,12 +40,15 @@ export function Login() {
   });
 
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-50">
+    <div
+      className="flex min-h-screen items-center justify-center bg-methanova-greenDark bg-cover bg-center p-4"
+      style={{ backgroundImage: `url(${loginBackground})` }}
+    >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200/70"
+        className="w-full max-w-sm space-y-4 rounded-xl bg-white p-8 shadow-overlay ring-1 ring-slate-200/70"
       >
-        <div>
+        <div className="flex flex-col items-center text-center">
           <img src={methanovaLogo} alt="Methanova CRM" className="h-14 w-auto" />
           <p className="mt-2 text-sm text-slate-500">Sign in to continue</p>
         </div>

@@ -121,7 +121,7 @@ Reference dashboards of this style use a narrow **icon-only** sidebar. That work
 - **Collapsed rail shows one icon per _section_, not per item**, each linking to that section's first destination with the section name as its tooltip and `aria-label`. Twenty near-identical glyphs in a 64px rail would be unusable; eight are scannable. Icons live on `NavSection.icon` in `app/nav.tsx`.
 - Brand mark top-left.
 
-Topbar keeps: collapse toggle, Jump (⌘K / Ctrl+K, a client-side route list plus optional lead lookup, not a multi-entity index), the `NotificationBell` dropdown, current user name + role, and sign out. Content area: `bg-slate-50`, `p-6`, max width `max-w-[1600px]` centred so ultrawide monitors don't stretch tables to unreadable widths.
+Topbar keeps: collapse toggle and Jump (⌘K / Ctrl+K, a client-side route list plus optional lead lookup, not a multi-entity index) on the left; current user name + role, the `NotificationBell` dropdown, and sign out on the right — the bell sits immediately before sign out, not beside Jump, so the two most personal controls are together. Content area: `bg-slate-50`, `p-6`, max width `max-w-[1600px]` centred so ultrawide monitors don't stretch tables to unreadable widths.
 
 > **As-built correction (D1).** An earlier draft of this section put the user avatar and sign out in the sidebar footer. Implementation kept them in the Topbar instead: duplicating sign out in two places is worse than matching the reference's avatar placement, and one unambiguous sign-out control is the safer pattern. Icons come from `lucide-react` — worth the dependency for ~15 glyphs, unlike the chart shapes in §3.
 

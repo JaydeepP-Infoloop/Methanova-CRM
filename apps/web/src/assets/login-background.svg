@@ -1,0 +1,71 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="base" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d2e1e" />
+      <stop offset="55%" stop-color="#123F28" />
+      <stop offset="100%" stop-color="#1B5E3B" />
+    </linearGradient>
+    <radialGradient id="glowGold" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C4A35A" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#C4A35A" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#EAF2ED" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#EAF2ED" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#base)" />
+
+  <!-- Soft ambient glows -->
+  <circle cx="1550" cy="200" r="520" fill="url(#glowGold)" />
+  <circle cx="250" cy="880" r="560" fill="url(#glowGreen)" />
+
+  <!-- Circular-economy rings, echoing the logo's own swirl motif -->
+  <g fill="none" stroke="#C4A35A" stroke-opacity="0.16" stroke-width="2">
+    <circle cx="1680" cy="150" r="260" />
+    <circle cx="1680" cy="150" r="340" />
+  </g>
+  <g fill="none" stroke="#EAF2ED" stroke-opacity="0.14" stroke-width="2">
+    <circle cx="120" cy="950" r="300" />
+    <circle cx="120" cy="950" r="400" />
+  </g>
+  <path d="M 1420 60 A 300 300 0 0 1 1680 410" fill="none" stroke="#C4A35A" stroke-opacity="0.3" stroke-width="4" stroke-linecap="round" />
+  <path d="M -140 700 A 340 340 0 0 0 220 1080" fill="none" stroke="#EAF2ED" stroke-opacity="0.22" stroke-width="4" stroke-linecap="round" />
+
+  <!-- Rising biogas bubbles -->
+  <g fill="#EAF2ED" fill-opacity="0.10">
+    <circle cx="300" cy="220" r="10" />
+    <circle cx="340" cy="160" r="6" />
+    <circle cx="270" cy="130" r="4" />
+    <circle cx="960" cy="140" r="8" />
+    <circle cx="990" cy="90" r="5" />
+    <circle cx="1500" cy="700" r="12" />
+    <circle cx="1540" cy="640" r="7" />
+    <circle cx="1570" cy="600" r="4" />
+    <circle cx="700" cy="820" r="9" />
+    <circle cx="740" cy="760" r="5" />
+  </g>
+
+  <!-- Digester / biogas-plant skyline along the base, kept low and subtle -->
+  <g fill="#0d2e1e" fill-opacity="0.55">
+    <rect x="0" y="1010" width="1920" height="70" />
+    <!-- domed digester tanks -->
+    <path d="M 120 1010 v -90 a 55 55 0 0 1 110 0 v 90 z" />
+    <path d="M 300 1010 v -60 a 38 38 0 0 1 76 0 v 60 z" />
+    <path d="M 1500 1010 v -110 a 65 65 0 0 1 130 0 v 110 z" />
+    <path d="M 1660 1010 v -55 a 34 34 0 0 1 68 0 v 55 z" />
+    <!-- connecting pipe -->
+    <rect x="175" y="965" width="1550" height="8" fill-opacity="0.5" />
+    <!-- support struts -->
+    <rect x="230" y="965" width="6" height="45" />
+    <rect x="1620" y="965" width="6" height="45" />
+  </g>
+
+  <!-- A single faint leaf accent, matching the CBG mark's own leaf -->
+  <path
+    d="M 1750 900 C 1830 860 1890 890 1920 940 C 1870 950 1810 950 1750 900 Z"
+    fill="#EAF2ED"
+    fill-opacity="0.06"
+  />
+</svg>
