@@ -5,11 +5,11 @@ const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
 const paise = z.coerce.number().int("Monetary values must be integer paise").nonnegative();
 
 /**
- * `status`, `number` and `totalPaise` are deliberately absent — the first two
- * are server-allocated (see `invoices.service.ts`), and `totalPaise` is not
- * recomputed here the way `quotations.service.ts` derives its own total,
- * because this pass does not touch the GST calculation `signMou()` already
- * does with `gstComponents()`; it only adds `dueDate`.
+ * `status`, `number` and `clientName` are deliberately absent — all three
+ * are server-set (see `invoices.service.ts`). `totalPaise` is accepted as
+ * given rather than recomputed the way `quotations.service.ts` derives its
+ * own total, because the GST calculation lives in `signMou()`'s
+ * `gstComponents()` and is out of scope here.
  */
 export const createInvoiceSchema = z.object({
   projectId: objectId,

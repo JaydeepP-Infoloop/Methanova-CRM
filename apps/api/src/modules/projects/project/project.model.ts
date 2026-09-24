@@ -1,6 +1,7 @@
 import { ProjectStatus, ResponsibleParty } from "@methanova/shared-types";
 import mongoose, { Schema } from "mongoose";
 import { applyDomainPlugins } from "../../../db/plugins/index.js";
+import { optionalPaiseField } from "../../../utils/http.js";
 
 const memberSchema = new Schema(
   {
@@ -28,9 +29,19 @@ const schema = new Schema(
     villageId: { type: Schema.Types.ObjectId, ref: "GeoVillage", default: null },
     capacityTpd: { type: Number, default: null },
     feedstockBasis: { type: String, trim: true, default: null },
+    /** Copied from the lead at MOU signing; the structured counterpart of the free-text `feedstockBasis`. */
+    feedstockTypeIds: { type: [{ type: Schema.Types.ObjectId, ref: "FeedstockType" }], default: [] },
     civilScope: { type: String, enum: [...Object.values(ResponsibleParty), null], default: null },
+    /** Copied from the signed MOU. Null on projects signed before this field existed. */
+    contractValuePaise: optionalPaiseField(),
+    /** The MOU's committed date — set once at signing and never overwritten; not in the update schema. Slippage goes in `revisedTargetDate`, so the original promise stays measurable. */
     targetCommissioningDate: { type: Date, default: null },
+    revisedTargetDate: { type: Date, default: null },
+    /** Stamped by the COMMISSIONING → HANDED_OVER transition — never typed in by hand. */
+    actualCommissioningDate: { type: Date, default: null },
     projectManagerUserId: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    siteEngineerUserId: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    liaisonOfficerUserId: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     members: { type: [memberSchema], default: [] },
     /** Null means inherit the org letterhead. */
     letterheadFileId: { type: Schema.Types.ObjectId, ref: "StoredFile", default: null },

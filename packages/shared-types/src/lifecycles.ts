@@ -155,6 +155,41 @@ export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   ProjectStatus.OM,
 ];
 
+/**
+ * Who executes a work package (SoW §8.1). A third value beyond
+ * `ResponsibleParty`'s Methanova/Client, because sub-contracted work is
+ * neither — and client-scope packages have to be distinguishable on the
+ * record, since a client-side delay is not Methanova's slippage.
+ */
+export const ExecutionScope = {
+  METHANOVA: "METHANOVA",
+  CLIENT: "CLIENT",
+  SUB_CONTRACTOR: "SUB_CONTRACTOR",
+} as const;
+export type ExecutionScope = (typeof ExecutionScope)[keyof typeof ExecutionScope];
+
+/** The SoW's fixed delay-reason list, exactly — a pick-list, not free text, so delays can be counted by cause. */
+export const WorkPackageDelayReason = {
+  CLIENT_DELAY: "CLIENT_DELAY",
+  AUTHORITY_DELAY: "AUTHORITY_DELAY",
+  VENDOR_DELAY: "VENDOR_DELAY",
+  MONSOON_WEATHER: "MONSOON_WEATHER",
+  DESIGN_CHANGE: "DESIGN_CHANGE",
+  PAYMENT_DELAY: "PAYMENT_DELAY",
+  LABOUR: "LABOUR",
+} as const;
+export type WorkPackageDelayReason = (typeof WorkPackageDelayReason)[keyof typeof WorkPackageDelayReason];
+
+export const WORK_PACKAGE_DELAY_REASON_LABELS: Record<WorkPackageDelayReason, string> = {
+  CLIENT_DELAY: "Client delay",
+  AUTHORITY_DELAY: "Authority delay",
+  VENDOR_DELAY: "Vendor delay",
+  MONSOON_WEATHER: "Monsoon / weather",
+  DESIGN_CHANGE: "Design change",
+  PAYMENT_DELAY: "Payment delay",
+  LABOUR: "Labour",
+};
+
 export const StoredFileKind = {
   ORG_LOGO: "ORG_LOGO",
   PROJECT_LETTERHEAD: "PROJECT_LETTERHEAD",

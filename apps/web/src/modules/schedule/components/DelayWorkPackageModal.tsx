@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { WORK_PACKAGE_DELAY_REASON_LABELS, WorkPackageDelayReason } from "@methanova/shared-types";
 import { Button } from "../../../components/Button";
 import { CONTROL_CLASS } from "../../../components/Field";
 import { Modal } from "../../../components/Modal";
@@ -13,11 +14,11 @@ export interface DelayWorkPackageModalProps {
   onClose: () => void;
 }
 
-/** The one transition that needs a reason alongside it — the server requires `delayReason` on this specific move (see `work-packages.validation.ts`). */
+/** The one transition that needs a reason alongside it — the server requires a `delayReason` from the SoW's fixed list on this specific move (see `work-packages.validation.ts`). */
 export function DelayWorkPackageModal({ open, workPackageId, workPackageLabel, onClose }: DelayWorkPackageModalProps) {
   const toast = useToast();
   const hold = useTransitionWorkPackage();
-  const [delayReason, setDelayReason] = useState("");
+  const [delayReason, setDelayReason] = useState<WorkPackageDelayReason | "">("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,13 +29,13 @@ export function DelayWorkPackageModal({ open, workPackageId, workPackageLabel, o
 
   async function submit() {
     if (!workPackageId) return;
-    if (!delayReason.trim()) {
-      setError("A reason is required when putting a work package on hold");
+    if (!delayReason) {
+      setError("Pick a reason for putting this work package on hold");
       return;
     }
     setError(null);
     try {
-      await hold.mutateAsync({ id: workPackageId, to: "ON_HOLD", delayReason: delayReason.trim() });
+      await hold.mutateAsync({ id: workPackageId, to: "ON_HOLD", delayReason });
       toast({ message: `${workPackageLabel} put on hold` });
       onClose();
     } catch (caught) {
@@ -69,13 +70,19 @@ export function DelayWorkPackageModal({ open, workPackageId, workPackageLabel, o
         <label htmlFor="work-package-delay-reason" className="block text-xs font-medium text-slate-700">
           Reason<span className="ml-0.5 text-rose-600">*</span>
         </label>
-        <textarea
+        <select
           id="work-package-delay-reason"
-          rows={3}
           className={`mt-1 ${CONTROL_CLASS}`}
           value={delayReason}
-          onChange={(event) => setDelayReason(event.target.value)}
-        />
+          onChange={(event) => setDelayReason(event.target.value as WorkPackageDelayReason | "")}
+        >
+          <option value="">Select a reason…</option>
+          {Object.values(WorkPackageDelayReason).map((reason) => (
+            <option key={reason} value={reason}>
+              {WORK_PACKAGE_DELAY_REASON_LABELS[reason]}
+            </option>
+          ))}
+        </select>
       </div>
     </Modal>
   );

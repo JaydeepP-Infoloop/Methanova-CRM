@@ -169,9 +169,12 @@ Table view (default) + **Kanban by `LeadStage`** (`ENQUIRY → QUALIFICATION →
 ### Schedule
 `ScheduleCalendar` week/month view over work packages, plus a Gantt-style bar list ordered by `sequence`. Colour-code by `WorkPackageStatus` using the semantic palette. Site visits and licence authority-visit dates appear on the same calendar — one place to see "who is going where".
 
+- **Delay reasons are a pick-list, never free text.** `DelayWorkPackageModal` is a `<select>` over `WorkPackageDelayReason` and shows `WORK_PACKAGE_DELAY_REASON_LABELS` from shared-types. Any future screen that shows or filters by delay reason uses the same labels rather than restating them.
+- **Derived flags come from the API, not the client.** `isDelayed`/`daysDelayed` (work packages), `isOverdue`/`daysOverdue` (licences, invoices) and `progressPct` (projects) arrive on every list and detail response. Screens should render them as they arrive, not recompute them, so a badge can never disagree with the dashboard. A delayed package or an overdue licence gets the rose/amber semantic tone, never a new colour.
+
 ### Billing & Receivables
 - Invoices: the densest table in the app. Columns: number, kind pill, client `IdentityCell`, taxable, GST split (CGST+SGST or IGST — show which regime applied), retention, total, status pill. All money `tabular-nums`, right-aligned, formatted from paise.
-- Receivables: ageing buckets (Current / 0-30 / 31-60 / 61-90 / 90+) as a summary strip of `StatCard`s above the receipts table, with the existing `AgeingBadge` per row.
+- Receivables: ageing buckets (Current / 0-30 / 31-60 / 61-90 / 90+) as a summary strip of `StatCard`s above the receipts table, with the existing `AgeingBadge` per row. The bucket boundaries are defined once, as `ageingBucket()`/`AgeingBucket` in shared-types; `AgeingBadge` and the API's `Invoice.ageingBucket` both use them. An invoice with a `null` bucket (not an open receivable, or no due date) shows an em dash, not "Current". Group by the invoice's own `clientName` snapshot.
 
 ### Documents
 Grid of document cards with kind badge, version, and project/lead link. The reference's block-editor screen maps to a future **DPR / quotation builder** — a genuinely large feature. That is P3 in `PROJECT_CONTEXT.md`; do not start it as part of a visual refresh.

@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
+import { ResponsibleParty } from "@methanova/shared-types";
 import { applyDomainPlugins } from "../../../db/plugins/index.js";
-
 
 export interface LicenceAttrs {
   [key: string]: unknown;
@@ -23,12 +23,22 @@ const schema = new Schema({
      * date, unmodified.
      */
     targetDate: { type: Date, default: null },
+    /** Copied from the licence type at creation (see signMou()); editable, because a deal can move a licence into the client's scope. */
+    scope: { type: String, enum: [...Object.values(ResponsibleParty), null], default: null, index: true },
+    assigneeUserId: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    /** Stamped by the first move to SUBMITTED (a query-response resubmission keeps the original). */
+    appliedDate: { type: Date, default: null },
+    /** Both stamped by the GRANTED transition — the grant date, which a caller may backdate to the letter's date but never set outside that move. */
+    clearedDate: { type: Date, default: null },
+    validFrom: { type: Date, default: null },
     /**
      * Set once GRANTED (required on that transition — see
      * licences.service.ts). Backs the existing GRANTED → EXPIRED transition,
      * which otherwise has no data telling it when to fire.
      */
     validUntil: { type: Date, default: null },
+    /** How many days before `validUntil` renewal work should start. Null = no reminder policy set for this licence. */
+    renewalLeadDays: { type: Number, min: 0, default: null },
 }, { collection: "licences" });
 
 applyDomainPlugins(schema);

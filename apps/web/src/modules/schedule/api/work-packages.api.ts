@@ -1,3 +1,4 @@
+import type { WorkPackageDelayReason } from "@methanova/shared-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../lib/apiClient";
 import { createResourceApi } from "../../../lib/apiResource";
@@ -10,7 +11,7 @@ export interface WorkPackageTransitionPayload {
   id: string;
   to: string;
   /** Only meaningful — and required by the server — when `to` is ON_HOLD. */
-  delayReason?: string;
+  delayReason?: WorkPackageDelayReason;
 }
 
 /**

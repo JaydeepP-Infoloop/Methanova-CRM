@@ -13,7 +13,8 @@ export async function get(req: Request, res: Response): Promise<void> {
 }
 
 export async function create(req: Request, res: Response): Promise<void> {
-  res.status(201).json(await service.createProject(req.body as Record<string, unknown>, req.user?.id));
+  const body = validation.createProjectSchema.parse(req.body);
+  res.status(201).json(await service.createProject(body, req.user?.id));
 }
 
 export async function update(req: Request, res: Response): Promise<void> {

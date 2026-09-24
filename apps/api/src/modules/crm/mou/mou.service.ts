@@ -227,15 +227,17 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
             villageId: lead.get("villageId") ?? null,
             capacityTpd: quotation.get("capacityTpd"),
             feedstockBasis: quotation.get("feedstockBasis"),
+            feedstockTypeIds: lead.get("feedstockTypeIds") ?? [],
             civilScope: mou.get("civilScope"),
+            contractValuePaise,
+            // The only write of this field, ever — see project.model.ts.
             targetCommissioningDate: mou.get("targetCommissioningDate"),
           },
         ],
         { session },
       );
       notifyProjectId = String(project._id);
-      // Only `projectManagerUserId` actually exists on Project today — see
-      // the model. It is never set inside this spin-up in practice — the
+      // `projectManagerUserId` is never set inside this spin-up in practice — the
       // real assignment happens afterwards through project.service.ts's
       // updateProject(), which carries its own notifyUsers() call for
       // exactly that reason (verified live: this call site alone never
@@ -271,6 +273,7 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
           licenceTypeId: type._id,
           bundle: type.get("bundle"),
           authority: type.get("authority"),
+          scope: type.get("scope") ?? null,
           status: "NOT_STARTED",
           visits: [],
           queries: [],
@@ -291,6 +294,7 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
             mouId: mou._id,
             paymentScheduleId: schedule._id,
             number: invoiceNumber,
+            clientName: lead.get("companyName"),
             kind: InvoiceKind.TAX_INVOICE,
             status: InvoiceStatus.TAX_INVOICE_ISSUED,
             placeOfSupply: place,

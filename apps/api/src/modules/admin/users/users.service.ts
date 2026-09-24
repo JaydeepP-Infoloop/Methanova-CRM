@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import type { Role } from "@methanova/shared-types";
 import { applyActor } from "../../../db/plugins/audit.plugin.js";
 import { HttpError } from "../../../utils/http.js";
 import { ProjectModel } from "../../projects/project/project.model.js";
@@ -40,13 +41,34 @@ export async function updateUser(id: string, payload: Record<string, unknown>, a
   return getUser(id);
 }
 
+/**
+ * Guards an assignment write: the user must exist (soft-deleted users don't)
+ * and, when `roles` is given, hold one of them. `label` names the slot in the
+ * error so the caller doesn't have to.
+ */
+export async function assertAssignableUser(userId: string, label: string, roles?: Role[]) {
+  const user = await UserModel.findById(userId).select("role");
+  if (!user) throw new HttpError(400, `${label}: that user does not exist`);
+  if (roles && !roles.includes(user.get("role") as Role)) {
+    throw new HttpError(400, `${label} must hold one of these roles: ${roles.join(", ")}`);
+  }
+}
+
+const PROJECT_ASSIGNMENT_SLOTS = [
+  ["projectManagerUserId", "Project Manager"],
+  ["siteEngineerUserId", "Site Engineer"],
+  ["liaisonOfficerUserId", "Liaison Officer"],
+] as const;
+
 export async function softDeleteUser(id: string, actorId?: string) {
-  const assigned = await ProjectModel.findOne({ projectManagerUserId: id }).select("code name");
-  if (assigned) {
-    throw new HttpError(
-      409,
-      `Reassign the Project Manager on ${assigned.get("code")} (${assigned.get("name")}) before deactivating this user`,
-    );
+  for (const [field, label] of PROJECT_ASSIGNMENT_SLOTS) {
+    const assigned = await ProjectModel.findOne({ [field]: id }).select("code name");
+    if (assigned) {
+      throw new HttpError(
+        409,
+        `Reassign the ${label} on ${assigned.get("code")} (${assigned.get("name")}) before deactivating this user`,
+      );
+    }
   }
   const doc = await UserModel.findById(id);
   if (!doc) throw new HttpError(404, "User not found");

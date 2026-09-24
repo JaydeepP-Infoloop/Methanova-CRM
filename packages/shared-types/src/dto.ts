@@ -1,5 +1,7 @@
 import type { Paise } from "./money.js";
+import type { AgeingBucket } from "./derived.js";
 import type {
+  ExecutionScope,
   GstPlaceOfSupply,
   InvoiceKind,
   InvoiceStatus,
@@ -7,8 +9,10 @@ import type {
   LicenceBundle,
   LicenceStatus,
   MouStatus,
+  ProjectStatus,
   QuotationStatus,
   ResponsibleParty,
+  WorkPackageDelayReason,
   WorkPackageStatus,
 } from "./lifecycles.js";
 import type { Role } from "./roles.js";
@@ -101,10 +105,23 @@ export interface ProjectDto {
   districtId?: Id;
   talukaId?: Id;
   villageId?: Id;
-  capacityTpd: number;
-  feedstockBasis: string;
-  civilScope: ResponsibleParty;
-  targetCommissioningDate: string;
+  status: ProjectStatus;
+  capacityTpd: number | null;
+  feedstockBasis: string | null;
+  feedstockTypeIds: Id[];
+  civilScope: ResponsibleParty | null;
+  /** Contract value copied from the signed MOU. Null on projects created before this field existed. */
+  contractValuePaise: Paise | null;
+  /** The MOU's date — set once at MOU signing and never overwritten. Slippage goes in `revisedTargetDate`. */
+  targetCommissioningDate: string | null;
+  revisedTargetDate: string | null;
+  /** Stamped by the COMMISSIONING → HANDED_OVER transition. */
+  actualCommissioningDate: string | null;
+  projectManagerUserId: Id | null;
+  siteEngineerUserId: Id | null;
+  liaisonOfficerUserId: Id | null;
+  /** Derived at read time: work-package completion weighted by `amountPaise`. Null when no work packages exist. */
+  progressPct: number | null;
 }
 
 export interface LicenceTypeDto {
@@ -123,7 +140,22 @@ export interface LicenceDto {
   projectId: Id;
   licenceTypeId: Id;
   bundle: LicenceBundle;
+  authority: string;
   status: LicenceStatus;
+  /** Copied from the licence type at MOU signing; editable per project. */
+  scope: ResponsibleParty | null;
+  assigneeUserId: Id | null;
+  targetDate: string | null;
+  /** Stamped by the SUBMITTED transition. */
+  appliedDate: string | null;
+  /** Both stamped by the GRANTED transition. */
+  clearedDate: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  renewalLeadDays: number | null;
+  /** Derived: `targetDate` passed without a `clearedDate`. */
+  isOverdue: boolean;
+  daysOverdue: number;
 }
 
 export interface InvoiceDto {
@@ -139,11 +171,36 @@ export interface InvoiceDto {
   retentionPaise: Paise;
   advanceRecoveredPaise: Paise;
   totalPaise: Paise;
+  projectId: Id;
+  /** Snapshot of the client's name when the invoice was raised — see PROJECT_CONTEXT.md "Invoice client identity". */
+  clientName: string | null;
+  dueDate: string | null;
+  /** Derived from `dueDate`; `ageingBucket` is null when the invoice is not an open receivable. */
+  isOverdue: boolean;
+  daysOverdue: number;
+  ageingBucket: AgeingBucket | null;
 }
 
 export interface WorkPackageDto {
   id: Id;
   projectId: Id;
   name: string;
+  sequence: number;
   status: WorkPackageStatus;
+  amountPaise: Paise;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  /** Stamped by the → IN_PROGRESS transition. */
+  actualStart: string | null;
+  /** Stamped by the → COMPLETED transition. */
+  actualEnd: string | null;
+  /** Mirrors the latest progress update; forced to 100 on COMPLETED. Not directly writable. */
+  percentComplete: number;
+  responsibleUserId: Id | null;
+  executionScope: ExecutionScope | null;
+  /** Set when the package is moved ON_HOLD — required on that move. */
+  delayReason: WorkPackageDelayReason | null;
+  /** Derived: past `plannedEnd` with `percentComplete` under 100. */
+  isDelayed: boolean;
+  daysDelayed: number;
 }

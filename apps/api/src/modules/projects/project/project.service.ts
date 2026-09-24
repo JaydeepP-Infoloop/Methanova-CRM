@@ -4,6 +4,7 @@ import {
   ProjectStatus,
   Role,
   WorkPackageStatus,
+  weightedProgressPct,
   type DashboardActiveProjectDto,
 } from "@methanova/shared-types";
 import mongoose from "mongoose";
@@ -14,6 +15,8 @@ import { MouModel } from "../../crm/mou/mou.model.js";
 import { notifyUsers } from "../../notifications/notifications.service.js";
 import { WorkPackageModel } from "../../schedule/work-packages/work-packages.model.js";
 import { UserModel } from "../../admin/users/users.model.js";
+import { assertAssignableUser } from "../../admin/users/users.service.js";
+import { FeedstockTypeModel } from "../../admin/master-data/geography.model.js";
 import { getOrgLetterhead, projectStatusIsClosed, publicFile } from "../../files/files.service.js";
 import { StoredFileModel } from "../../files/files.model.js";
 import { ProjectModel } from "./project.model.js";
@@ -22,19 +25,55 @@ const TERMINAL_WORK_PACKAGE_STATUSES: string[] = [WorkPackageStatus.COMPLETED, W
 
 const POPULATE = [
   { path: "projectManagerUserId", select: "name email role" },
+  { path: "siteEngineerUserId", select: "name email role" },
+  { path: "liaisonOfficerUserId", select: "name email role" },
   { path: "members.userId", select: "name email role" },
   { path: "letterheadFileId", select: "-storageKey" },
 ];
 
+/**
+ * `progressPct` per project, derived on every read from the live work
+ * packages — never stored, so it can't lag a progress update. One query for
+ * any number of projects.
+ */
+async function progressByProject(projectIds: unknown[]): Promise<Map<string, number | null>> {
+  const workPackages = await WorkPackageModel.find({ projectId: { $in: projectIds } })
+    .select("projectId status percentComplete amountPaise")
+    .lean();
+  const grouped = new Map<string, { status: string; percentComplete: number; amountPaise: number }[]>();
+  for (const workPackage of workPackages) {
+    const key = String(workPackage.projectId);
+    const list = grouped.get(key) ?? [];
+    list.push({
+      status: String(workPackage.status),
+      percentComplete: Number(workPackage.percentComplete ?? 0),
+      amountPaise: Number(workPackage.amountPaise ?? 0),
+    });
+    grouped.set(key, list);
+  }
+  return new Map(projectIds.map((id) => [String(id), weightedProgressPct(grouped.get(String(id)) ?? [])]));
+}
+
 export async function listProjects(opts: { mine?: boolean; userId?: string }) {
   const filter: Record<string, unknown> = {};
   if (opts.mine && opts.userId) {
-    filter.$or = [{ projectManagerUserId: opts.userId }, { "members.userId": opts.userId }];
+    filter.$or = [
+      { projectManagerUserId: opts.userId },
+      { siteEngineerUserId: opts.userId },
+      { liaisonOfficerUserId: opts.userId },
+      { "members.userId": opts.userId },
+    ];
   }
-  return ProjectModel.find(filter)
+  const docs = await ProjectModel.find(filter)
     .populate("projectManagerUserId", "name email role")
     .sort({ createdAt: -1 })
     .limit(200);
+  const progress = await progressByProject(docs.map((doc) => doc._id));
+  return docs.map((doc) => ({
+    ...doc.toObject(),
+    id: String(doc._id),
+    progressPct: progress.get(String(doc._id)) ?? null,
+  }));
 }
 
 /**
@@ -106,8 +145,11 @@ export async function getProject(id: string) {
   const resolvedFileId = override
     ? String((override as { _id?: unknown })._id ?? override)
     : org.fileId;
+  const progress = await progressByProject([doc._id]);
   return {
     ...doc.toObject(),
+    id: String(doc._id),
+    progressPct: progress.get(String(doc._id)) ?? null,
     letterhead: {
       source: letterheadSource,
       fileId: resolvedFileId,
@@ -128,10 +170,19 @@ function setupChecklist(project: Record<string, unknown>, hasLetterhead: boolean
   };
 }
 
+async function assertFeedstockTypes(ids: string[] | undefined) {
+  if (!ids?.length) return;
+  const unique = [...new Set(ids)];
+  const found = await FeedstockTypeModel.countDocuments({ _id: { $in: unique }, deletedAt: null });
+  if (found !== unique.length) throw new HttpError(400, "One or more feedstock types were not found");
+}
+
 export async function createProject(payload: Record<string, unknown>, actorId?: string) {
+  await assertFeedstockTypes(payload.feedstockTypeIds as string[] | undefined);
   const doc = new ProjectModel(payload);
   applyActor(doc, actorId, "create");
-  return doc.save();
+  await doc.save();
+  return getProject(String(doc._id));
 }
 
 export async function updateProject(
@@ -141,6 +192,10 @@ export async function updateProject(
     shortName?: string | null;
     description?: string | null;
     projectManagerUserId?: string | null;
+    siteEngineerUserId?: string | null;
+    liaisonOfficerUserId?: string | null;
+    revisedTargetDate?: Date | null;
+    feedstockTypeIds?: string[];
   },
   actorId?: string,
 ) {
@@ -148,13 +203,33 @@ export async function updateProject(
   if (!doc) throw new HttpError(404, "Project not found");
   const status = String(doc.get("status"));
   const identityTouched =
-    payload.name !== undefined || payload.shortName !== undefined || payload.description !== undefined;
+    payload.name !== undefined ||
+    payload.shortName !== undefined ||
+    payload.description !== undefined ||
+    payload.revisedTargetDate !== undefined ||
+    payload.feedstockTypeIds !== undefined;
   if (identityTouched && projectStatusIsClosed(status)) {
-    throw new HttpError(409, "Identity is read-only after handover");
+    throw new HttpError(409, "Project details are read-only after handover");
   }
   if (payload.name !== undefined) doc.set("name", payload.name);
   if (payload.shortName !== undefined) doc.set("shortName", payload.shortName);
   if (payload.description !== undefined) doc.set("description", payload.description);
+  if (payload.revisedTargetDate !== undefined) doc.set("revisedTargetDate", payload.revisedTargetDate);
+  if (payload.feedstockTypeIds !== undefined) {
+    await assertFeedstockTypes(payload.feedstockTypeIds);
+    doc.set("feedstockTypeIds", [...new Set(payload.feedstockTypeIds)]);
+  }
+  if (payload.siteEngineerUserId) {
+    await assertAssignableUser(payload.siteEngineerUserId, "Site Engineer", [Role.SITE_ENGINEER, Role.DIRECTOR]);
+  }
+  if (payload.siteEngineerUserId !== undefined) doc.set("siteEngineerUserId", payload.siteEngineerUserId);
+  if (payload.liaisonOfficerUserId) {
+    await assertAssignableUser(payload.liaisonOfficerUserId, "Liaison Officer", [
+      Role.LIAISON_COMPLIANCE_OFFICER,
+      Role.DIRECTOR,
+    ]);
+  }
+  if (payload.liaisonOfficerUserId !== undefined) doc.set("liaisonOfficerUserId", payload.liaisonOfficerUserId);
   const previousPmId = doc.get("projectManagerUserId") ? String(doc.get("projectManagerUserId")) : null;
   let newlyAssignedPmId: string | null = null;
   if (payload.projectManagerUserId !== undefined) {
@@ -196,6 +271,11 @@ export async function transitionProject(id: string, to: string, actorId?: string
   if (!doc) throw new HttpError(404, "Project not found");
   assertTransition("project", String(doc.get("status")), to);
   doc.set("status", to);
+  // COMMISSIONING → HANDED_OVER is the only way in (transitions.ts), so this
+  // stamp is the moment the plant was actually commissioned and handed over.
+  if (to === ProjectStatus.HANDED_OVER && !doc.get("actualCommissioningDate")) {
+    doc.set("actualCommissioningDate", new Date());
+  }
   applyActor(doc, actorId, "status_transition");
   await doc.save();
   return getProject(id);
@@ -247,12 +327,7 @@ export async function softDeleteProject(id: string, actorId?: string) {
 }
 
 async function assertEligibleManager(userId: string) {
-  const user = await UserModel.findById(userId).select("role name");
-  if (!user) throw new HttpError(400, "That user does not exist");
-  const role = String(user.get("role"));
-  if (role !== Role.PROJECT_MANAGER && role !== Role.DIRECTOR) {
-    throw new HttpError(400, "The Project Manager must hold the Project Manager or Director role");
-  }
+  await assertAssignableUser(userId, "Project Manager", [Role.PROJECT_MANAGER, Role.DIRECTOR]);
 }
 
 export { StoredFileModel, publicFile, ProjectStatus };

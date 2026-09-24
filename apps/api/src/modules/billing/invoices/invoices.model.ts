@@ -29,6 +29,14 @@ const schema = new Schema({
      * no data behind it, and the Dashboard's Billing panel.
      */
     dueDate: { type: Date, default: null, index: true },
+    /**
+     * The billed-to name as it stood when the invoice was raised — copied
+     * server-side from the project, never accepted from a client, and not
+     * rewritten if the project is renamed later: a tax invoice is a legal
+     * document and its addressee is a historical fact. Receivables ageing
+     * groups on this. See PROJECT_CONTEXT.md "Invoice client identity".
+     */
+    clientName: { type: String, trim: true, default: null, index: true },
 }, { collection: "invoices" });
 
 applyDomainPlugins(schema);
