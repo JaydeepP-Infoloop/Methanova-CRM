@@ -9,3 +9,4 @@ export * from "./qualification.js";
 export * from "./permissions.js";
 export * from "./dto.js";
 export * from "./notifications.js";
+export * from "./dashboard.js";

@@ -2,12 +2,14 @@ import {
   ActivityParentType,
   computeQualificationScore,
   DEFAULT_LEAD_TEMPERATURE,
+  LEAD_STAGE_ORDER,
   LeadStage,
   NEW_LEAD_STAGE,
   nextStates,
   NotificationEntityType,
   NotificationEventType,
   QualificationDecision,
+  type DashboardPipelineStageDto,
   type LeadInboxSummaryDto,
 } from "@methanova/shared-types";
 import mongoose from "mongoose";
@@ -337,6 +339,33 @@ export async function getSourceMix(): Promise<LeadSourceMixDto> {
       count: row.count,
     })),
   };
+}
+
+/**
+ * The Dashboard's sales-pipeline card, reusing the exact aggregation shape
+ * `getInboxSummary`'s own value totals already use (`$group` + `$ifNull` on
+ * `indicativeValuePaise`) rather than a second definition of the same sum.
+ * Every stage in `LEAD_STAGE_ORDER` is always present, including at count 0
+ * — a real zero from a real query, not an omitted row standing in for one.
+ */
+export async function getPipelineByStage(): Promise<DashboardPipelineStageDto[]> {
+  const rows = await LeadModel.aggregate<{ _id: string; count: number; total: number }>([
+    { $match: { deletedAt: null } },
+    {
+      $group: {
+        _id: "$stage",
+        count: { $sum: 1 },
+        total: { $sum: { $ifNull: ["$indicativeValuePaise", 0] } },
+      },
+    },
+  ]);
+  const byStage = new Map(rows.map((row) => [row._id, row]));
+
+  return LEAD_STAGE_ORDER.map((stage) => ({
+    stage,
+    count: byStage.get(stage)?.count ?? 0,
+    indicativeValueTotalPaise: byStage.get(stage)?.total ?? 0,
+  }));
 }
 
 /**

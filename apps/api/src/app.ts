@@ -13,6 +13,7 @@ import { invoicesRouter } from "./modules/billing/invoices/invoices.routes.js";
 import { paymentSchedulesRouter } from "./modules/billing/payment-schedules/payment-schedules.routes.js";
 import { licencesRouter } from "./modules/compliance/licences/licences.routes.js";
 import { activitiesRouter } from "./modules/crm/activities/activities.routes.js";
+import { dashboardRouter } from "./modules/crm/dashboard/dashboard.routes.js";
 import { leadsRouter } from "./modules/crm/leads/leads.routes.js";
 import { mouRouter } from "./modules/crm/mou/mou.routes.js";
 import { myDayRouter } from "./modules/crm/my-day/my-day.routes.js";
@@ -48,6 +49,7 @@ export function createApp() {
   api.use("/crm/activities", activitiesRouter);
   api.use("/crm/mou", mouRouter);
   api.use("/crm/my-day", myDayRouter);
+  api.use("/crm/dashboard", dashboardRouter);
   api.use("/projects/feasibility", feasibilityRouter);
   api.use("/projects/dpr", drpRouter);
   api.use("/projects", projectRouter);

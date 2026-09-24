@@ -7,11 +7,13 @@ import {
   InvoiceKind,
   InvoiceStatus,
   LeadStage,
+  MOU_STATUS_ORDER,
   MouStatus,
   NotificationEntityType,
   NotificationEventType,
   ProjectStatus,
   QuotationStatus,
+  type DashboardMouStatusDto,
   type Role,
 } from "@methanova/shared-types";
 import mongoose from "mongoose";
@@ -45,6 +47,35 @@ export const DEFAULT_MOU_APPROVAL_THRESHOLD_PAISE = 1_000_000_000;
 
 export async function listMous() {
   return MouModel.find().sort({ createdAt: -1 }).limit(100);
+}
+
+/**
+ * The Dashboard's MOU card. Every status in `MOU_STATUS_ORDER` is always
+ * present, including at count 0. `contractValuePaise`/`feePaise` are summed
+ * as recorded on each MOU regardless of status — the SIGNED row is where
+ * "total signed contract value" actually lives; DRAFT/SENT rows show what's
+ * still in the pipeline rather than committed.
+ */
+export async function getMouSummaryByStatus(): Promise<DashboardMouStatusDto[]> {
+  const rows = await MouModel.aggregate<{ _id: string; count: number; contractValuePaise: number; feePaise: number }>([
+    { $match: { deletedAt: null } },
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+        contractValuePaise: { $sum: { $ifNull: ["$contractValuePaise", 0] } },
+        feePaise: { $sum: { $ifNull: ["$feePaise", 0] } },
+      },
+    },
+  ]);
+  const byStatus = new Map(rows.map((row) => [row._id, row]));
+
+  return MOU_STATUS_ORDER.map((status) => ({
+    status,
+    count: byStatus.get(status)?.count ?? 0,
+    contractValuePaise: byStatus.get(status)?.contractValuePaise ?? 0,
+    feePaise: byStatus.get(status)?.feePaise ?? 0,
+  }));
 }
 
 export async function getMou(id: string) {

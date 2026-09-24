@@ -112,6 +112,12 @@ export const MouStatus = {
   CANCELLED: "CANCELLED",
 } as const;
 export type MouStatus = (typeof MouStatus)[keyof typeof MouStatus];
+export const MOU_STATUS_ORDER: MouStatus[] = [
+  MouStatus.DRAFT,
+  MouStatus.SENT,
+  MouStatus.SIGNED,
+  MouStatus.CANCELLED,
+];
 
 /**
  * Who is responsible for a piece of scope — a licence type's own scope, and

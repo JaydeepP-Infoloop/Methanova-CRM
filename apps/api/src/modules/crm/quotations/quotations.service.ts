@@ -1,4 +1,4 @@
-import { canTransition, QuotationStatus } from "@methanova/shared-types";
+import { canTransition, QuotationStatus, type DashboardQuotationsSummaryDto } from "@methanova/shared-types";
 import { assertTransition } from "../../../core/state-machine/index.js";
 import { applyActor } from "../../../db/plugins/audit.plugin.js";
 import { HttpError } from "../../../utils/http.js";
@@ -6,6 +6,31 @@ import { QuotationModel } from "./quotations.model.js";
 
 export async function listQuotations() {
   return QuotationModel.find().sort({ createdAt: -1 }).limit(100);
+}
+
+/**
+ * The Dashboard's "Open Quotations" KPI. "Open" is every non-terminal
+ * `QuotationStatus` — ACCEPTED, REJECTED and SUPERSEDED are the only terminal
+ * states (see `packages/shared-types/src/transitions.ts`) — derived from the
+ * real status enum rather than a proxy invented from unrelated fields.
+ */
+const TERMINAL_QUOTATION_STATUSES = [
+  QuotationStatus.ACCEPTED,
+  QuotationStatus.REJECTED,
+  QuotationStatus.SUPERSEDED,
+];
+
+export async function getOpenQuotationsSummary(): Promise<DashboardQuotationsSummaryDto> {
+  const match = { status: { $nin: TERMINAL_QUOTATION_STATUSES }, deletedAt: null };
+  const [openCount, valueAgg] = await Promise.all([
+    QuotationModel.countDocuments(match),
+    QuotationModel.aggregate<{ total: number }>([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: { $ifNull: ["$totalPaise", 0] } } } },
+      { $project: { _id: 0, total: 1 } },
+    ]),
+  ]);
+  return { openCount, openValueTotalPaise: valueAgg[0]?.total ?? 0 };
 }
 
 export async function getQuotation(id: string) {
