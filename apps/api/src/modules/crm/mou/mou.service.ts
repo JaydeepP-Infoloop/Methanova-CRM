@@ -274,6 +274,9 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
           status: "NOT_STARTED",
           visits: [],
           queries: [],
+          // Every statutory approval should ideally be in hand before
+          // commissioning — the MOU's own real date, not an invented offset.
+          targetDate: mou.get("targetCommissioningDate"),
         })),
         // ordered: true is required by Mongoose when create() is given a
         // session and more than one document; without it the whole sign

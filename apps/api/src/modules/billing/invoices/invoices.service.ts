@@ -15,6 +15,25 @@ export async function listInvoices() {
   return InvoiceModel.find().sort({ createdAt: -1 }).limit(100);
 }
 
+/**
+ * The Dashboard Billing card's "invoiced" series — grouped by the month an
+ * invoice was raised (`createdAt`; this codebase has no separate "issued at"
+ * moment — an invoice is created at issue time). UTC-grouped throughout,
+ * matching the rest of this codebase's plain `Date` handling.
+ */
+export async function getMonthlyInvoicedTotals(sinceMonthStart: Date): Promise<Map<string, number>> {
+  const rows = await InvoiceModel.aggregate<{ _id: string; total: number }>([
+    { $match: { createdAt: { $gte: sinceMonthStart }, deletedAt: null } },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+        total: { $sum: { $ifNull: ["$totalPaise", 0] } },
+      },
+    },
+  ]);
+  return new Map(rows.map((row) => [row._id, row.total]));
+}
+
 export async function getInvoice(id: string) {
   const doc = await InvoiceModel.findById(id);
   if (!doc) throw new HttpError(404, "Invoice not found");

@@ -21,6 +21,14 @@ const schema = new Schema({
     retentionPaise: paiseField(),
     advanceRecoveredPaise: paiseField(),
     totalPaise: paiseField(),
+    /**
+     * Null on older/auto-created invoices (e.g. the MOU-fee invoice `signMou()`
+     * creates has no payment-terms policy to derive a due date from — nothing
+     * in this codebase defines "days to pay" yet, so it is left unset rather
+     * than invented). Backs the existing `OVERDUE` status, which otherwise has
+     * no data behind it, and the Dashboard's Billing panel.
+     */
+    dueDate: { type: Date, default: null, index: true },
 }, { collection: "invoices" });
 
 applyDomainPlugins(schema);

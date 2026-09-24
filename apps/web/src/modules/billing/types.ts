@@ -26,4 +26,6 @@ export interface InvoiceRow extends BaseRecord {
   retentionPaise: number;
   advanceRecoveredPaise: number;
   totalPaise: number;
+  /** Null on older/auto-created invoices — see `invoices.model.ts`. */
+  dueDate?: string | null;
 }

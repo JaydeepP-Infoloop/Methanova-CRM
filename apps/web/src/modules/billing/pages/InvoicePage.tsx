@@ -5,7 +5,7 @@ import { ResourceTable, type ResourceColumn } from "../../../components/Resource
 import { StatusPill } from "../../../components/StatusPill";
 import { InvoiceStatusBadge } from "../components/InvoiceStatusBadge";
 import { emptyStateMessage } from "../../../lib/emptyState";
-import { formatPaise } from "../../../lib/formatters";
+import { formatDate, formatPaise } from "../../../lib/formatters";
 import { invoicesApi } from "../api/invoices.api";
 import type { InvoiceRow } from "../types";
 
@@ -20,6 +20,12 @@ const columns: ResourceColumn<InvoiceRow>[] = [
   { key: "number", label: "Number", sortable: true },
   { key: "kind", label: "Kind", render: (row) => <StatusPill value={row.kind} /> },
   { key: "status", label: "Status", sortable: true, render: (row) => <InvoiceStatusBadge status={row.status} /> },
+  {
+    key: "dueDate",
+    label: "Due date",
+    sortable: true,
+    render: (row) => (row.dueDate ? formatDate(row.dueDate) : "—"),
+  },
   {
     key: "taxablePaise",
     label: "Taxable",

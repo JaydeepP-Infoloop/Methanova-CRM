@@ -81,10 +81,22 @@ function toActivityRailItems(rows: ActivityListItemDto[]): ActivityRailItem[] {
   return rows.map((row) => ({ ...row, leadId: row.parentId }));
 }
 
+/** "2026-01" (the aggregation's own UTC grouping key) → "Jan 2026". */
+function monthLabel(key: string): string {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-IN", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function Dashboard() {
   const { user } = useAuth();
   const canReadCrm = Boolean(user && canAccess(user.role, AppModule.crm, AccessLevel.READ));
   const canSeeTeamQueue = Boolean(user && canAccess(user.role, AppModule.crm, AccessLevel.FULL));
+  const canReadBilling = Boolean(user && canAccess(user.role, AppModule.billing, AccessLevel.READ));
+  const canReadCompliance = Boolean(user && canAccess(user.role, AppModule.compliance, AccessLevel.READ));
 
   const summary = useLeadSummary(DASHBOARD_SUMMARY_FILTERS, { enabled: canReadCrm });
   const myDay = useMyDay(canSeeTeamQueue ? "team" : "mine", { enabled: canReadCrm });
@@ -104,6 +116,12 @@ export function Dashboard() {
   const quotations = dashboard.data?.quotations;
 
   const recentActivity = toActivityRailItems(dashboard.data?.recentActivity ?? []);
+
+  const billing = dashboard.data?.billing ?? [];
+  const billingHasAnyData = billing.some((row) => row.invoicedPaise > 0 || row.collectedPaise > 0);
+
+  const compliance = dashboard.data?.compliance;
+  const complianceBundles = compliance?.byBundle ?? [];
 
   return (
     <div className="space-y-4">
@@ -254,29 +272,60 @@ export function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card title="Billing & collections" className="lg:col-span-2">
-          <BarChart
-            categories={[]}
-            series={[
-              { label: "Invoiced", colorClass: "fill-methanova-green", values: [] },
-              { label: "Collected", colorClass: "fill-methanova-gold", values: [] },
-            ]}
-            formatValue={formatPaise}
-            emptyHint="Invoiced vs collected by month appears once invoices exist."
-          />
-        </Card>
+        {canReadBilling && (
+          <Card title="Billing & collections" className="lg:col-span-2">
+            {dashboard.isLoading ? (
+              <Skeleton className="h-56 w-full" />
+            ) : billingHasAnyData ? (
+              <BarChart
+                categories={billing.map((row) => monthLabel(row.month))}
+                series={[
+                  {
+                    label: "Invoiced",
+                    colorClass: "fill-methanova-green",
+                    values: billing.map((row) => row.invoicedPaise),
+                  },
+                  {
+                    label: "Collected",
+                    colorClass: "fill-methanova-gold",
+                    values: billing.map((row) => row.collectedPaise),
+                  },
+                ]}
+                formatValue={formatPaise}
+              />
+            ) : (
+              <p className="py-6 text-center text-sm text-slate-500">
+                Invoiced vs collected by month appears once invoices exist.
+              </p>
+            )}
+          </Card>
+        )}
 
-        <Card title="Compliance health">
-          <DonutMeter value={0} total={0} caption="Licences granted across active projects" />
-          <ul className="mt-4 space-y-2">
-            {["Pre-CTE", "CTE", "CTO"].map((bundle) => (
-              <li key={bundle} className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">{bundle}</span>
-                <span className="tabular-nums text-slate-400">—</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        {canReadCompliance && (
+          <Card title="Compliance health">
+            {dashboard.isLoading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : (
+              <>
+                <DonutMeter
+                  value={compliance?.grantedCount ?? 0}
+                  total={compliance?.totalCount ?? 0}
+                  caption="Licences granted across active projects"
+                />
+                <ul className="mt-4 space-y-2">
+                  {complianceBundles.map((row) => (
+                    <li key={row.bundle} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600">{row.bundle.replace(/_/g, " ")}</span>
+                      <span className="tabular-nums text-slate-500">
+                        {row.totalCount === 0 ? "—" : `${row.grantedCount} of ${row.totalCount}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
+        )}
       </div>
 
       <Card title="Active projects" bodyPadding={false}>

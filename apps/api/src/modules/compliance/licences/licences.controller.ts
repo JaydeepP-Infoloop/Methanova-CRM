@@ -26,5 +26,5 @@ export async function remove(req: Request, res: Response): Promise<void> {
 
 export async function transition(req: Request, res: Response): Promise<void> {
   const body = validation.transitionLicenceSchema.parse(req.body);
-  res.json(await service.transitionLicence(req.params.id, body.to, req.user?.id));
+  res.json(await service.transitionLicence(req.params.id, body.to, req.user?.id, body.validUntil));
 }
