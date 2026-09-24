@@ -3,6 +3,7 @@ import { LayoutDashboard, Sunrise } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { ReactNode } from "react";
 import { Tooltip } from "../../components/Tooltip";
+import methanovaCbgIcon from "../../assets/methanova-cbg-icon.png";
 import { NAV_SECTIONS } from "../nav";
 
 const itemClasses = ({ isActive }: { isActive: boolean }) =>
@@ -29,9 +30,7 @@ export function Sidebar({ role, collapsed }: { role: Role; collapsed: boolean })
       }`}
     >
       <div className={`flex h-14 items-center gap-2 ${collapsed ? "justify-center px-2" : "px-4"}`}>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-methanova-gold text-sm font-bold text-methanova-greenDark">
-          M
-        </span>
+        <img src={methanovaCbgIcon} alt="CBG CRM" className="h-8 w-8 shrink-0 object-contain" />
         {!collapsed && <span className="truncate text-sm font-semibold text-white">Methanova CRM</span>}
       </div>
 
