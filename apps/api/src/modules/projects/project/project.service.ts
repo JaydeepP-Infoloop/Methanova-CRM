@@ -1,27 +1,27 @@
 import {
   NotificationEntityType,
   NotificationEventType,
+  OPEN_PROJECT_STATUSES,
+  PROJECT_PORTFOLIO_STATUS_OF,
+  PROJECT_PORTFOLIO_STATUS_ORDER,
+  ProjectPortfolioStatus,
   ProjectStatus,
   Role,
-  WorkPackageStatus,
-  weightedProgressPct,
-  type DashboardActiveProjectDto,
+  projectStatusesIn,
+  type DashboardPortfolioDto,
 } from "@methanova/shared-types";
 import mongoose from "mongoose";
 import { applyActor, AuditLogModel } from "../../../db/plugins/audit.plugin.js";
 import { assertTransition } from "../../../core/state-machine/index.js";
 import { HttpError } from "../../../utils/http.js";
-import { MouModel } from "../../crm/mou/mou.model.js";
 import { notifyUsers } from "../../notifications/notifications.service.js";
-import { WorkPackageModel } from "../../schedule/work-packages/work-packages.model.js";
+import { getProgressByProject } from "../../schedule/work-packages/work-packages.service.js";
 import { UserModel } from "../../admin/users/users.model.js";
 import { assertAssignableUser } from "../../admin/users/users.service.js";
 import { FeedstockTypeModel } from "../../admin/master-data/geography.model.js";
 import { getOrgLetterhead, projectStatusIsClosed, publicFile } from "../../files/files.service.js";
 import { StoredFileModel } from "../../files/files.model.js";
 import { ProjectModel } from "./project.model.js";
-
-const TERMINAL_WORK_PACKAGE_STATUSES: string[] = [WorkPackageStatus.COMPLETED, WorkPackageStatus.HANDED_OVER];
 
 const POPULATE = [
   { path: "projectManagerUserId", select: "name email role" },
@@ -31,44 +31,36 @@ const POPULATE = [
   { path: "letterheadFileId", select: "-storageKey" },
 ];
 
-/**
- * `progressPct` per project, derived on every read from the live work
- * packages — never stored, so it can't lag a progress update. One query for
- * any number of projects.
- */
-async function progressByProject(projectIds: unknown[]): Promise<Map<string, number | null>> {
-  const workPackages = await WorkPackageModel.find({ projectId: { $in: projectIds } })
-    .select("projectId status percentComplete amountPaise")
-    .lean();
-  const grouped = new Map<string, { status: string; percentComplete: number; amountPaise: number }[]>();
-  for (const workPackage of workPackages) {
-    const key = String(workPackage.projectId);
-    const list = grouped.get(key) ?? [];
-    list.push({
-      status: String(workPackage.status),
-      percentComplete: Number(workPackage.percentComplete ?? 0),
-      amountPaise: Number(workPackage.amountPaise ?? 0),
-    });
-    grouped.set(key, list);
-  }
-  return new Map(projectIds.map((id) => [String(id), weightedProgressPct(grouped.get(String(id)) ?? [])]));
-}
-
-export async function listProjects(opts: { mine?: boolean; userId?: string }) {
-  const filter: Record<string, unknown> = {};
+export async function listProjects(opts: {
+  mine?: boolean;
+  userId?: string;
+  portfolio?: string;
+  /** Pre-computed by the caller from the same risk reasons the dashboard shows — see dashboard.service.ts. */
+  onlyIds?: string[];
+}) {
+  const clauses: Record<string, unknown>[] = [];
   if (opts.mine && opts.userId) {
-    filter.$or = [
-      { projectManagerUserId: opts.userId },
-      { siteEngineerUserId: opts.userId },
-      { liaisonOfficerUserId: opts.userId },
-      { "members.userId": opts.userId },
-    ];
+    clauses.push({
+      $or: [
+        { projectManagerUserId: opts.userId },
+        { siteEngineerUserId: opts.userId },
+        { liaisonOfficerUserId: opts.userId },
+        { "members.userId": opts.userId },
+      ],
+    });
   }
-  const docs = await ProjectModel.find(filter)
+  if (opts.portfolio) {
+    if (!(PROJECT_PORTFOLIO_STATUS_ORDER as string[]).includes(opts.portfolio)) {
+      throw new HttpError(400, "Unknown portfolio status");
+    }
+    clauses.push({ status: { $in: projectStatusesIn(opts.portfolio as ProjectPortfolioStatus) } });
+  }
+  if (opts.onlyIds) clauses.push({ _id: { $in: opts.onlyIds } });
+  const docs = await ProjectModel.find(clauses.length ? { $and: clauses } : {})
     .populate("projectManagerUserId", "name email role")
     .sort({ createdAt: -1 })
     .limit(200);
-  const progress = await progressByProject(docs.map((doc) => doc._id));
+  const progress = await getProgressByProject(docs.map((doc) => doc._id));
   return docs.map((doc) => ({
     ...doc.toObject(),
     id: String(doc._id),
@@ -76,59 +68,56 @@ export async function listProjects(opts: { mine?: boolean; userId?: string }) {
   }));
 }
 
-/**
- * The Dashboard's Active Projects card. "Current work package" is the first
- * one not yet COMPLETED/HANDED_OVER, ordered by `sequence` — nothing
- * auto-creates work packages at MOU-sign (they're built out afterwards, by
- * the PM, per the SoW's own process), so a freshly signed project honestly
- * has none yet and falls back to its own `targetCommissioningDate` for
- * `plannedEnd` rather than showing a blank cell with no date to point to at
- * all. `valuePaise` is the accepted MOU's `contractValuePaise`, not
- * recomputed here — `mou.service.ts` already owns that number.
- */
-export async function getActiveProjectsSummary(limit = 20): Promise<DashboardActiveProjectDto[]> {
-  const projects = await ProjectModel.find({ deletedAt: null }).sort({ createdAt: -1 }).limit(limit).lean();
-  if (projects.length === 0) return [];
-
-  const projectIds = projects.map((project) => project._id);
-  const mouIds = projects.map((project) => project.mouId);
-
-  const [workPackages, mous] = await Promise.all([
-    WorkPackageModel.find({ projectId: { $in: projectIds }, deletedAt: null })
-      .sort({ sequence: 1 })
-      .select("projectId name status sequence plannedEnd")
-      .lean(),
-    MouModel.find({ _id: { $in: mouIds } }).select("contractValuePaise").lean(),
+/** Project counts per SoW portfolio status, as a `$group` over the real lifecycle status. TERMINATED is null — nothing maps to it. */
+export async function getPortfolioCounts(): Promise<Pick<DashboardPortfolioDto, "byStatus" | "openCount">> {
+  const rows = await ProjectModel.aggregate<{ _id: ProjectStatus; count: number }>([
+    { $match: { deletedAt: null } },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
-
-  const mouById = new Map(mous.map((mou) => [String(mou._id), mou]));
-  const workPackagesByProject = new Map<string, typeof workPackages>();
-  for (const workPackage of workPackages) {
-    const key = String(workPackage.projectId);
-    const list = workPackagesByProject.get(key) ?? [];
-    list.push(workPackage);
-    workPackagesByProject.set(key, list);
+  const counts = new Map<ProjectPortfolioStatus, number>();
+  let openCount = 0;
+  for (const row of rows) {
+    const portfolio = PROJECT_PORTFOLIO_STATUS_OF[row._id];
+    if (!portfolio) continue;
+    counts.set(portfolio, (counts.get(portfolio) ?? 0) + row.count);
+    if (OPEN_PROJECT_STATUSES.includes(row._id)) openCount += row.count;
   }
+  return {
+    byStatus: PROJECT_PORTFOLIO_STATUS_ORDER.map((status) => ({
+      status,
+      count: projectStatusesIn(status).length === 0 ? null : (counts.get(status) ?? 0),
+    })),
+    openCount,
+  };
+}
 
-  return projects.map((project) => {
-    const ownWorkPackages = workPackagesByProject.get(String(project._id)) ?? [];
-    const current = ownWorkPackages.find(
-      (workPackage) => !TERMINAL_WORK_PACKAGE_STATUSES.includes(String(workPackage.status)),
-    );
-    return {
-      id: String(project._id),
-      code: String(project.code),
-      client: String(project.name),
-      status: String(project.status),
-      workPackageName: current ? String(current.name) : null,
-      plannedEnd: current?.plannedEnd
-        ? new Date(current.plannedEnd).toISOString()
-        : project.targetCommissioningDate
-          ? new Date(project.targetCommissioningDate as Date).toISOString()
-          : null,
-      valuePaise: mouById.get(String(project.mouId))?.contractValuePaise ?? 0,
-    };
-  });
+export interface OpenProjectRow {
+  _id: mongoose.Types.ObjectId;
+  code: string;
+  name: string;
+  status: ProjectStatus;
+  targetCommissioningDate: Date | null;
+  revisedTargetDate: Date | null;
+  projectManagerName: string | null;
+}
+
+/** Every open (not Completed) project, with its PM's name joined in — the population every live-risk section is scoped to. */
+export async function listOpenProjects(): Promise<OpenProjectRow[]> {
+  return ProjectModel.aggregate<OpenProjectRow>([
+    { $match: { deletedAt: null, status: { $in: OPEN_PROJECT_STATUSES } } },
+    { $sort: { code: 1 } },
+    { $lookup: { from: "users", localField: "projectManagerUserId", foreignField: "_id", as: "pm" } },
+    {
+      $project: {
+        code: 1,
+        name: 1,
+        status: 1,
+        targetCommissioningDate: { $ifNull: ["$targetCommissioningDate", null] },
+        revisedTargetDate: { $ifNull: ["$revisedTargetDate", null] },
+        projectManagerName: { $ifNull: [{ $first: "$pm.name" }, null] },
+      },
+    },
+  ]);
 }
 
 async function loadProject(id: string) {
@@ -145,7 +134,7 @@ export async function getProject(id: string) {
   const resolvedFileId = override
     ? String((override as { _id?: unknown })._id ?? override)
     : org.fileId;
-  const progress = await progressByProject([doc._id]);
+  const progress = await getProgressByProject([doc._id]);
   return {
     ...doc.toObject(),
     id: String(doc._id),

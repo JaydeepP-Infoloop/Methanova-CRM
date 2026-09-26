@@ -17,6 +17,11 @@ export interface WorkPackageRow extends BaseRecord {
   actualEnd?: string | null;
   /** Set once, when moved to ON_HOLD; irrelevant otherwise. */
   delayReason?: string | null;
+  /** Mirrors the latest progress update; the API never accepts it directly. */
+  percentComplete?: number;
+  /** Derived by the API on every read — see derived.ts `workPackageDelay()`. */
+  isDelayed?: boolean;
+  daysDelayed?: number;
 }
 
 export interface ProgressUpdateRow extends BaseRecord {

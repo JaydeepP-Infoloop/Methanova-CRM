@@ -11,13 +11,23 @@ import { ViewToggle, type ListView } from "../../../components/ViewToggle";
 import { ApiError } from "../../../lib/apiClient";
 import { emptyStateMessage } from "../../../lib/emptyState";
 import { formatDate } from "../../../lib/formatters";
+import { useUrlFilters } from "../../../lib/useUrlFilters";
+import { UrlFilterNotice } from "../../../components/UrlFilterNotice";
 import { licencesApi, useTransitionLicence } from "../api/licences.api";
 import { GrantLicenceModal } from "../components/GrantLicenceModal";
 import { LicenceStatusBadge } from "../components/LicenceStatusBadge";
 import type { LicenceRow } from "../types";
 
 export function LicencePage() {
-  const { data, isLoading, error } = licencesApi.useList();
+  const url = useUrlFilters(["projectId", "overdue", "expiringSoon", "status", "id", "openProjects"] as const);
+  const { data, isLoading, error } = licencesApi.useList(url.filters);
+  const filterLabels = [
+    ...(url.filters.overdue ? ["Past target date, not cleared"] : []),
+    ...(url.filters.expiringSoon ? ["Expiring soon"] : []),
+    ...(url.filters.status ? [`Status ${url.filters.status.replace(/_/g, " ")}`] : []),
+    ...(url.filters.id ? ["One licence"] : []),
+    ...(url.filters.openProjects ? ["Open projects only"] : []),
+  ];
   const transition = useTransitionLicence();
   const toast = useToast();
   const [search, setSearch] = useState("");
@@ -32,7 +42,9 @@ export function LicencePage() {
   // a search miss gets the shared, consistent wording.
   const emptyHint = search
     ? emptyStateMessage({ entityLabel: "licences", hasSearch: true })
-    : { message: "Licences appear once an MOU is signed." };
+    : url.active
+      ? { message: "No licences match this filter." }
+      : { message: "Licences appear once an MOU is signed." };
 
   /**
    * GRANTED is the one transition that needs a value alongside it (see
@@ -85,6 +97,13 @@ export function LicencePage() {
       render: (row) => (row.validUntil ? formatDate(row.validUntil) : "—"),
     },
     {
+      key: "daysOverdue",
+      label: "Overdue",
+      align: "right",
+      sortable: true,
+      render: (row) => (row.isOverdue ? <StatusPill value={`${row.daysOverdue}d past target`} tone="problem" /> : "—"),
+    },
+    {
       key: "status",
       label: "Status",
       sortable: true,
@@ -120,6 +139,9 @@ export function LicencePage() {
         <p role="alert" className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-600/20">
           {actionError}
         </p>
+      )}
+      {url.active && (
+        <UrlFilterNotice labels={filterLabels} projectId={url.filters.projectId} onClear={url.clear} />
       )}
       <FilterBar
         search={search}

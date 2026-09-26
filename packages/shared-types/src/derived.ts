@@ -7,7 +7,30 @@ import { InvoiceStatus, LicenceStatus, WorkPackageStatus } from "./lifecycles.js
  * and any later dashboard aggregation apply exactly one rule each.
  */
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Exported so the API's Mongo pipelines express the same whole-day rule
+ * (`floor(elapsed / DAY_MS) >= 1` ⇔ `date <= now - DAY_MS`) that these
+ * functions apply per record — each aggregation cites the function it mirrors.
+ */
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Fallback licence expiry-warning window when neither the licence's own `renewalLeadDays` nor the master-data setting says otherwise. */
+export const DEFAULT_LICENCE_EXPIRY_WINDOW_DAYS = 60;
+
+export const TERMINAL_WORK_PACKAGE_STATUSES: readonly string[] = [WorkPackageStatus.COMPLETED, WorkPackageStatus.HANDED_OVER];
+export const CLEARED_LICENCE_STATUSES: readonly string[] = [LicenceStatus.GRANTED, LicenceStatus.EXPIRED];
+
+/** GRANTED with `validUntil` from now to now + window, where the window is the licence's own `renewalLeadDays` if set. */
+export function licenceExpiringSoon(
+  licence: { status: string; validUntil?: DateLike; renewalLeadDays?: number | null },
+  defaultWindowDays: number,
+  now: Date = new Date(),
+): boolean {
+  const validUntil = toDate(licence.validUntil);
+  if (!validUntil || licence.status !== LicenceStatus.GRANTED) return false;
+  const windowMs = (licence.renewalLeadDays ?? defaultWindowDays) * DAY_MS;
+  return validUntil.getTime() >= now.getTime() && validUntil.getTime() <= now.getTime() + windowMs;
+}
 
 function wholeDaysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
@@ -19,7 +42,7 @@ function toDate(value: DateLike): Date | null {
   return value ? new Date(value) : null;
 }
 
-const WORK_PACKAGE_DONE: string[] = [WorkPackageStatus.COMPLETED, WorkPackageStatus.HANDED_OVER];
+const WORK_PACKAGE_DONE = TERMINAL_WORK_PACKAGE_STATUSES;
 
 /**
  * Past `plannedEnd` by at least a whole day with `percentComplete` under 100.
@@ -59,7 +82,7 @@ export function weightedProgressPct(
   return Math.round(workPackages.reduce((sum, workPackage) => sum + pct(workPackage), 0) / workPackages.length);
 }
 
-const LICENCE_CLEARED: string[] = [LicenceStatus.GRANTED, LicenceStatus.EXPIRED];
+const LICENCE_CLEARED = CLEARED_LICENCE_STATUSES;
 
 /**
  * Target date passed without a `clearedDate`. GRANTED/EXPIRED also count as
@@ -105,18 +128,24 @@ const INVOICE_RECEIVABLE: string[] = [
   InvoiceStatus.OVERDUE,
 ];
 
+export const INVOICE_RECEIVABLE_STATUSES: readonly string[] = INVOICE_RECEIVABLE;
+
 /**
  * Ageing is measured from `dueDate`. An invoice that isn't an open
- * receivable (DRAFT, PAID, CANCELLED, CREDITED) or has no due date yet has
- * no bucket at all — `null`, not CURRENT, because "not owed" and "owed but
- * not yet due" are different answers.
+ * receivable (DRAFT, PAID, CANCELLED, CREDITED), has no due date yet, or has
+ * nothing left outstanding once its receipts are netted off has no bucket at
+ * all — `null`, not CURRENT, because "not owed" and "owed but not yet due"
+ * are different answers. `outstandingPaise` is passed whenever the caller
+ * has it: receipts don't move an invoice's status, so status alone can't
+ * tell a settled invoice from an unpaid one.
  */
 export function invoiceAgeing(
-  invoice: { status: string; dueDate?: DateLike },
+  invoice: { status: string; dueDate?: DateLike; outstandingPaise?: number | null },
   now: Date = new Date(),
 ): { isOverdue: boolean; daysOverdue: number; ageingBucket: AgeingBucket | null } {
   const dueDate = toDate(invoice.dueDate);
-  if (!dueDate || !INVOICE_RECEIVABLE.includes(invoice.status)) {
+  const settled = invoice.outstandingPaise !== undefined && invoice.outstandingPaise !== null && invoice.outstandingPaise <= 0;
+  if (!dueDate || settled || !INVOICE_RECEIVABLE.includes(invoice.status)) {
     return { isOverdue: false, daysOverdue: 0, ageingBucket: null };
   }
   const days = wholeDaysBetween(dueDate, now);

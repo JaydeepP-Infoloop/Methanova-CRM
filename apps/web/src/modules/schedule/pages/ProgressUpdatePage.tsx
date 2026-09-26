@@ -1,4 +1,8 @@
+import { AccessLevel, AppModule, canAccess } from "@methanova/shared-types";
+import { Plus } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "../../../app/providers";
+import { Button } from "../../../components/Button";
 import { FilterBar, filterRows } from "../../../components/FilterBar";
 import { PageHeader } from "../../../components/PagePrimitives";
 import { RefCell } from "../../../components/RefCell";
@@ -7,6 +11,7 @@ import { emptyStateMessage } from "../../../lib/emptyState";
 import { formatDate } from "../../../lib/formatters";
 import { progressUpdatesApi } from "../api/progress-updates.api";
 import { workPackagesApi } from "../api/work-packages.api";
+import { LogProgressModal } from "../components/LogProgressModal";
 import type { ProgressUpdateRow } from "../types";
 
 type ProgressUpdateListRow = ProgressUpdateRow & { workPackageLabel: string };
@@ -48,9 +53,12 @@ const columns: ResourceColumn<ProgressUpdateListRow>[] = [
 ];
 
 export function ProgressUpdatePage() {
+  const { user } = useAuth();
+  const canWrite = Boolean(user && canAccess(user.role, AppModule.schedule, AccessLevel.WRITE));
   const { data, isLoading, error } = progressUpdatesApi.useList();
   const workPackages = workPackagesApi.useList();
   const [search, setSearch] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
 
   const workPackageLabels = new Map((workPackages.data ?? []).map((wp) => [wp._id, wp.name]));
 
@@ -66,7 +74,15 @@ export function ProgressUpdatePage() {
       <PageHeader
         title="Progress Updates"
         subtitle="Percent-complete entries logged against each work package."
-      />
+      >
+        {canWrite && (
+          <Button onClick={() => setLogOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New progress update
+          </Button>
+        )}
+      </PageHeader>
+      <LogProgressModal open={logOpen} onClose={() => setLogOpen(false)} />
       <FilterBar search={search} onSearchChange={setSearch} placeholder="Search by work package or note…" />
       <ResourceTable
         rows={rows}

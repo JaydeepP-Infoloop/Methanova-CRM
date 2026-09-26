@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../lib/apiClient";
-import { createResourceApi } from "../../../lib/apiResource";
+import { createResourceApi, withQuery, type ListParams } from "../../../lib/apiResource";
 import { queryKeys, RESOURCE } from "../../../lib/queryKeys";
 import type { ProjectAuditRow, ProjectRow } from "../types";
 
 export const projectApi = createResourceApi<ProjectRow>("/api/projects", RESOURCE.projects);
 
-export function useProjectList(mine: boolean) {
+export function useProjectList(mine: boolean, filters: ListParams = {}) {
+  const params: ListParams = { ...filters, mine: mine ? "true" : undefined };
   return useQuery({
-    queryKey: queryKeys.list(RESOURCE.projects, { mine }),
-    queryFn: () => apiClient<ProjectRow[]>(`/api/projects${mine ? "?mine=true" : ""}`),
+    queryKey: queryKeys.list(RESOURCE.projects, params),
+    queryFn: () => apiClient<ProjectRow[]>(withQuery("/api/projects", params)),
   });
 }
 

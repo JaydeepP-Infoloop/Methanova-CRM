@@ -1,11 +1,20 @@
 import type { Request, Response } from "express";
+import { getAtRiskProjectIds } from "../../crm/dashboard/dashboard.service.js";
 import * as files from "../../files/files.service.js";
 import * as service from "./project.service.js";
 import * as validation from "./project.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  const mine = req.query.mine === "true";
-  res.json(await service.listProjects({ mine, userId: req.user?.id }));
+  const query = validation.listProjectsQuerySchema.parse(req.query);
+  const onlyIds = query.atRisk && req.user ? await getAtRiskProjectIds(req.user.role) : undefined;
+  res.json(
+    await service.listProjects({
+      mine: query.mine,
+      userId: req.user?.id,
+      portfolio: query.portfolio,
+      onlyIds,
+    }),
+  );
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

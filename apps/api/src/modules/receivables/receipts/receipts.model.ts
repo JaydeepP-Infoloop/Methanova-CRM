@@ -7,7 +7,7 @@ export interface ReceiptAttrs {
 }
 
 const schema = new Schema({
-    invoiceId: { type: Schema.Types.ObjectId, ref: "Invoice", required: true },
+    invoiceId: { type: Schema.Types.ObjectId, ref: "Invoice", required: true, index: true },
     amountPaise: paiseField(),
     receivedOn: { type: Date, required: true, default: Date.now },
     reference: { type: String },

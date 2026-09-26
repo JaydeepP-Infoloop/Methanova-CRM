@@ -1,4 +1,4 @@
-import { ProjectStatus, ResponsibleParty } from "@methanova/shared-types";
+import { OPEN_PROJECT_STATUSES, ProjectStatus, ResponsibleParty } from "@methanova/shared-types";
 import mongoose, { Schema } from "mongoose";
 import { applyDomainPlugins } from "../../../db/plugins/index.js";
 import { optionalPaiseField } from "../../../utils/http.js";
@@ -52,3 +52,9 @@ const schema = new Schema(
 applyDomainPlugins(schema);
 
 export const ProjectModel = mongoose.models.Project ?? mongoose.model("Project", schema);
+
+/** `{ projectId: { $in: [...] } }` over every open (not Completed), non-deleted project — the scope the dashboard's live-risk figures use, so their drill-down lists can match them exactly. */
+export async function openProjectScope(): Promise<Record<string, unknown>> {
+  const rows = await ProjectModel.find({ status: { $in: OPEN_PROJECT_STATUSES } }).select("_id").lean();
+  return { projectId: { $in: rows.map((row) => row._id) } };
+}

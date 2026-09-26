@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { ExecutionScope, WorkPackageDelayReason, WorkPackageStatus } from "@methanova/shared-types";
+import { listFilterFields } from "../../../utils/query.js";
+
+export const listWorkPackagesQuerySchema = z.object({
+  id: listFilterFields.id,
+  projectId: listFilterFields.projectId,
+  status: listFilterFields.status,
+  delayed: listFilterFields.delayed,
+  openProjects: listFilterFields.openProjects,
+});
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
 const paise = z.coerce.number().int("Monetary values must be integer paise").nonnegative();

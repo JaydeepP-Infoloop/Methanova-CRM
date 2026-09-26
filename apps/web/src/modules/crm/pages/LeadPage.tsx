@@ -1,7 +1,7 @@
 import { LEAD_STAGE_ORDER, LeadStage, LeadTemperature, type LeadListItemDto } from "@methanova/shared-types";
 import { AlertTriangle, Hourglass, Inbox, MailQuestion, Plus, Sunrise, UserX } from "lucide-react";
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { BarChart } from "../../../components/BarChart";
 import { Button } from "../../../components/Button";
 import { Field } from "../../../components/Field";
@@ -44,7 +44,8 @@ const KANBAN_PAGE_SIZE = 100;
  * before. Stage and temperature stay in FilterBar: those genuinely combine
  * with any of these.
  */
-type Segment = "all" | "unassigned" | "noFirstResponse" | "arrivedToday";
+const SEGMENTS = ["all", "unassigned", "noFirstResponse", "arrivedToday"] as const;
+type Segment = (typeof SEGMENTS)[number];
 
 /** Below this, a chart is noise rather than a signal — show the count instead. */
 const MIN_LEADS_FOR_CHARTS = 5;
@@ -60,12 +61,22 @@ export function LeadPage() {
   const toast = useToast();
   const addButtonRef = useRef<HTMLButtonElement>(null);
 
+  // A dashboard drill-down (`?segment=unassigned`, `?stage=MOU`) only seeds
+  // the initial state; after that the segmented bar and FilterBar own it.
+  const [searchParams] = useSearchParams();
+  const urlSegment = searchParams.get("segment");
+  const urlStage = searchParams.get("stage");
+
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [stage, setStage] = useState("");
+  const [stage, setStage] = useState(() =>
+    urlStage && (LEAD_STAGE_ORDER as string[]).includes(urlStage) ? urlStage : "",
+  );
   const [temperature, setTemperature] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
-  const [segment, setSegment] = useState<Segment>("all");
+  const [segment, setSegment] = useState<Segment>(() =>
+    urlSegment && (SEGMENTS as readonly string[]).includes(urlSegment) ? (urlSegment as Segment) : "all",
+  );
   const [view, setView] = useState<ListView>("table");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);

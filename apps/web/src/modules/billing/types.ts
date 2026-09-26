@@ -28,4 +28,11 @@ export interface InvoiceRow extends BaseRecord {
   totalPaise: number;
   /** Null on older/auto-created invoices — see `invoices.model.ts`. */
   dueDate?: string | null;
+  clientName?: string | null;
+  /** Total less live receipts, computed by the API. */
+  outstandingPaise?: number;
+  /** Derived by the API on every read — see derived.ts `invoiceAgeing()`. */
+  isOverdue?: boolean;
+  daysOverdue?: number;
+  ageingBucket?: string | null;
 }

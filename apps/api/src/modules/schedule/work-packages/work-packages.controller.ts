@@ -3,7 +3,7 @@ import * as service from "./work-packages.service.js";
 import * as validation from "./work-packages.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listWorkPackages());
+  res.json(await service.listWorkPackages(validation.listWorkPackagesQuerySchema.parse(req.query)));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

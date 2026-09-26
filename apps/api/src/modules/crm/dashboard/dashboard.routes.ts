@@ -1,20 +1,24 @@
-import { AccessLevel, AppModule } from "@methanova/shared-types";
+import { Role } from "@methanova/shared-types";
 import { Router } from "express";
-import { requireAuth, requirePermission } from "../../../middlewares/index.js";
+import { requireAuth } from "../../../middlewares/index.js";
+import { HttpError } from "../../../utils/http.js";
 import * as controller from "./dashboard.controller.js";
 
 export const dashboardRouter = Router();
 
 /**
- * Gated at `crm:READ`, the same check the Dashboard's existing KPI strip
- * already uses client-side — not `reports:READ`, which Liaison &
- * Compliance and Design/Engineering both hold without holding `crm:READ`
- * (see the permission matrix in PROJECT_CONTEXT.md §5) and would otherwise
- * let them fetch lead/MOU data through this endpoint even though the UI
- * never shows it to them. Client-side hiding is not access control on its
- * own (hard rule #7).
+ * Authentication only at the route: each section is gated by its own
+ * module's `:READ` inside `getDashboard()`, so a Liaison Officer (compliance,
+ * no crm) gets Compliance Health without being able to fetch lead data here.
+ *
+ * The CLIENT role is refused outright. Its schedule/billing READ is meant for
+ * its own project in the (deferred) client portal, but every section here
+ * aggregates across all clients — client-scoped figures are that portal's
+ * job, not a filtered version of this endpoint.
  */
-dashboardRouter.use(requireAuth, requirePermission(AppModule.crm, AccessLevel.READ));
+dashboardRouter.use(requireAuth, (req, _res, next) => {
+  next(req.user?.role === Role.CLIENT ? new HttpError(403, "The dashboard is not available to client accounts") : undefined);
+});
 
 dashboardRouter.get("/", (req, res, next) => {
   void controller.get(req, res).catch(next);

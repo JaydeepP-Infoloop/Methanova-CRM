@@ -7,12 +7,12 @@ export interface InvoiceAttrs {
 }
 
 const schema = new Schema({
-    projectId: { type: Schema.Types.ObjectId, ref: "Project" },
+    projectId: { type: Schema.Types.ObjectId, ref: "Project", index: true },
     mouId: { type: Schema.Types.ObjectId, ref: "Mou" },
     paymentScheduleId: { type: Schema.Types.ObjectId, ref: "PaymentSchedule" },
     number: { type: String, required: true, unique: true },
     kind: { type: String, required: true, enum: ["PROFORMA", "TAX_INVOICE", "CREDIT_NOTE"] },
-    status: { type: String, required: true, default: "DRAFT" },
+    status: { type: String, required: true, default: "DRAFT", index: true },
     placeOfSupply: { type: String, required: true, enum: ["INTRA_STATE", "INTER_STATE"] },
     taxablePaise: paiseField(),
     cgstPaise: paiseField(),

@@ -1,5 +1,15 @@
 import { GstPlaceOfSupply, InvoiceKind } from "@methanova/shared-types";
 import { z } from "zod";
+import { listFilterFields } from "../../../utils/query.js";
+
+/** `bucket` is an `AgeingBucket` value, or `none` for outstanding invoices with no due date. */
+export const listInvoicesQuerySchema = z.object({
+  id: listFilterFields.id,
+  projectId: listFilterFields.projectId,
+  receivable: listFilterFields.receivable,
+  overdue: listFilterFields.overdue,
+  bucket: z.enum(["CURRENT", "0-30", "31-60", "61-90", "90+", "none"]).optional(),
+});
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
 const paise = z.coerce.number().int("Monetary values must be integer paise").nonnegative();

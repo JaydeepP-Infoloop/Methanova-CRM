@@ -5,18 +5,22 @@ import { FilterBar, filterRows } from "../../../components/FilterBar";
 import { KanbanBoard } from "../../../components/KanbanBoard";
 import { PageHeader } from "../../../components/PagePrimitives";
 import { ResourceTable, type ResourceColumn } from "../../../components/ResourceTable";
+import { StatusPill } from "../../../components/StatusPill";
 import { useToast } from "../../../components/Toast";
+import { UrlFilterNotice } from "../../../components/UrlFilterNotice";
 import { ViewToggle, type ListView } from "../../../components/ViewToggle";
 import { ApiError } from "../../../lib/apiClient";
 import { emptyStateMessage } from "../../../lib/emptyState";
 import { formatDate, formatPaise } from "../../../lib/formatters";
+import { useUrlFilters } from "../../../lib/useUrlFilters";
 import { useTransitionWorkPackage, workPackagesApi } from "../api/work-packages.api";
 import { WorkPackageStatusBadge } from "../components/WorkPackageStatusBadge";
 import { DelayWorkPackageModal } from "../components/DelayWorkPackageModal";
 import type { WorkPackageRow } from "../types";
 
 export function WorkPackagePage() {
-  const { data, isLoading, error } = workPackagesApi.useList();
+  const url = useUrlFilters(["projectId", "delayed", "status", "id", "openProjects"] as const);
+  const { data, isLoading, error } = workPackagesApi.useList(url.filters);
   const transition = useTransitionWorkPackage();
   const toast = useToast();
   const [search, setSearch] = useState("");
@@ -25,7 +29,16 @@ export function WorkPackagePage() {
   const [holdTarget, setHoldTarget] = useState<WorkPackageRow | null>(null);
 
   const rows = filterRows(data ?? [], search, ["name", "status"]);
-  const emptyHint = emptyStateMessage({ entityLabel: "work packages", hasSearch: Boolean(search) });
+  const emptyHint =
+    url.active && !search
+      ? { message: "No work packages match this filter." }
+      : emptyStateMessage({ entityLabel: "work packages", hasSearch: Boolean(search) });
+  const filterLabels = [
+    ...(url.filters.delayed ? ["Delayed only"] : []),
+    ...(url.filters.status ? [`Status ${url.filters.status.replace(/_/g, " ")}`] : []),
+    ...(url.filters.id ? ["One work package"] : []),
+    ...(url.filters.openProjects ? ["Open projects only"] : []),
+  ];
 
   /**
    * ON_HOLD is the one transition that needs a value alongside it (see
@@ -55,6 +68,20 @@ export function WorkPackagePage() {
       label: "Planned end",
       sortable: true,
       render: (row) => (row.plannedEnd ? formatDate(row.plannedEnd) : "—"),
+    },
+    {
+      key: "percentComplete",
+      label: "Complete",
+      align: "right",
+      sortable: true,
+      render: (row) => `${row.percentComplete ?? 0}%`,
+    },
+    {
+      key: "daysDelayed",
+      label: "Delay",
+      align: "right",
+      sortable: true,
+      render: (row) => (row.isDelayed ? <StatusPill value={`${row.daysDelayed}d late`} tone="problem" /> : "—"),
     },
     {
       key: "actualEnd",
@@ -102,6 +129,9 @@ export function WorkPackagePage() {
         <p role="alert" className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-600/20">
           {actionError}
         </p>
+      )}
+      {url.active && (
+        <UrlFilterNotice labels={filterLabels} projectId={url.filters.projectId} onClear={url.clear} />
       )}
       <FilterBar search={search} onSearchChange={setSearch} placeholder="Search work packages…">
         <ViewToggle view={view} onChange={setView} />

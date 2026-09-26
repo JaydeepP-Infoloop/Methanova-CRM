@@ -3,7 +3,7 @@ import * as service from "./invoices.service.js";
 import * as validation from "./invoices.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listInvoices());
+  res.json(await service.listInvoices(validation.listInvoicesQuerySchema.parse(req.query)));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

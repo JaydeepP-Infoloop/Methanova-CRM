@@ -3,7 +3,7 @@ import * as service from "./licences.service.js";
 import * as validation from "./licences.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listLicences());
+  res.json(await service.listLicences(validation.listLicencesQuerySchema.parse(req.query)));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

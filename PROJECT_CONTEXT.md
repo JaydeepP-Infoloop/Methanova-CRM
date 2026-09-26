@@ -151,7 +151,7 @@ This file governs *what* the system does and what phase work belongs to. Its com
 
 Every panel on `Dashboard.tsx` now reads real data — the Billing, Compliance and Active Projects hardcoded literals that started this three-part pass are gone.
 
-**Done: Phase 2 schema enrichment — Project, WorkPackage, Invoice, Licence.** This pass changed only models, validation, DTOs and the write paths that create these records. It deliberately left `Dashboard.tsx` and the dashboard aggregation alone; wiring the new fields into Compliance Health, Project Portfolio Health, Billing and Receivables Ageing is a separate phase that hasn't started. Every new field is nullable, or has a neutral default like `0` or `[]`. None is mongoose-`required`, and presence is enforced only on the specific write path that needs it.
+**Done: Phase 2 schema enrichment — Project, WorkPackage, Invoice, Licence.** This pass changed only models, validation, DTOs and the write paths that create these records. It deliberately left `Dashboard.tsx` and the dashboard aggregation alone; wiring the new fields into Compliance Health, Project Portfolio Health, Billing and Receivables Ageing was left to a separate phase (since done — see Phase 3 below). Every new field is nullable, or has a neutral default like `0` or `[]`. None is mongoose-`required`, and presence is enforced only on the specific write path that needs it.
 
 - **The brief's starting assumptions were partly out of date — reconciled here rather than duplicated.** Before this pass, Project already had `capacityTpd`, `civilScope`, `targetCommissioningDate` and a PM field (named `projectManagerUserId`, so no second `projectManagerId` was added). Invoice already had `dueDate`, Licence already had `targetDate`/`validUntil`, and WorkPackage already had `actualEnd`. `signMou()` already built each Licence from its LicenceType's bundle and authority; it did not hardcode SPCB.
 - **Naming**: new user references follow the existing `*UserId` convention: `siteEngineerUserId`, `liaisonOfficerUserId`, `responsibleUserId`, `assigneeUserId`.
@@ -196,6 +196,77 @@ Every panel on `Dashboard.tsx` now reads real data — the Billing, Compliance a
   - A licence 5 days past `targetDate` with no `clearedDate` shows `isOverdue: true` and `daysOverdue: 5`, and stays overdue after SUBMITTED. GRANTED stamped `clearedDate`/`validFrom` and cleared the flag, and a future grant date returned 400.
   - A PATCH that included `targetCommissioningDate` left it unchanged.
   - The hold modal was exercised in the browser: the empty submit was blocked, and choosing a reason put the package on hold.
+
+**Done: Phase 3 — the dashboard is real-data-driven end to end.** Every panel, count, row and alert on `Dashboard.tsx` comes from a live query, and each one links to its source list, already filtered.
+
+- **Gate check first.** All the fields the brief required were confirmed on the models before any panel was built. The brief's `projectManagerId` is `projectManagerUserId` here.
+- **One endpoint, extended.** `GET /api/crm/dashboard` now also returns `projectHealth`, `delayedWorkPackages`, a richer `compliance`, `receivables` and `criticalAlerts`. Phase 2b's `activeProjects` and `getActiveProjectsSummary()` were removed; Project Health covers the same ground.
+- **Every figure is a Mongo aggregation, not a collection fetch reduced in JavaScript.** Each domain module owns its pipeline:
+  - `getProgressByProject` and `getDelayedWorkPackagesSummary` (work packages)
+  - `getComplianceHealth` (licences)
+  - `getReceivablesSummary` (invoices)
+  - `getPortfolioCounts` and `listOpenProjects` (projects)
+
+  Each pipeline's filter is the Mongo form of one `derived.ts` rule: `delayedWorkPackageFilter`, `overdueLicenceFilter`, `expiringSoonLicenceFilter`, and `outstandingStages` for invoice ageing. The same filters back the list pages' drill-down query parameters. Verified live: each destination list's count equals the dashboard figure that links to it.
+- **Access is checked per section, on the server.** The route used to require `crm:READ`, which meant a Liaison Officer (compliance access, no CRM) could never see Compliance Health. The route now requires only authentication, and `getDashboard()` checks each section against its own module:
+
+  | Section | Needs READ on |
+  |---|---|
+  | CRM strip, pipeline, recent activity | `crm` |
+  | Portfolio and Project Health | `projects` |
+  | Delayed work packages | `schedule` |
+  | Compliance | `compliance` |
+  | Billing chart | `billing` |
+  | Receivables and invoice reasons | `receivables` |
+
+  A section the caller can't read is never computed; it comes back `null` or `[]`. Risk reasons follow the same rule, and `evaluatedKinds` tells the UI which kinds were checked. For example, a Sales Head sees Project Health with no reasons evaluated and a note saying so; they are not told a project is on track on checks they aren't allowed to see.
+- **The CLIENT role gets a 403 from the dashboard.** Its schedule and billing READ are meant for its own project in the future client portal, but this endpoint aggregates across all clients. Removing the old `crm:READ` gate would otherwise have exposed every client's figures to client accounts.
+- **Project statuses.** The SoW's four portfolio statuses are a reporting view over the real lifecycle, not a second lifecycle (`PROJECT_PORTFOLIO_STATUS_OF`):
+
+  | SoW status | Lifecycle statuses |
+  |---|---|
+  | Active | ACTIVE, COMMISSIONING |
+  | On hold | ON_HOLD |
+  | Completed | HANDED_OVER, OM |
+  | Terminated | none |
+
+  Terminated reports `null` and the page shows "Not available", because nothing can terminate a project yet. Adding a TERMINATED lifecycle state is a separate product decision. "Open" means Active or On hold; delayed work packages, compliance and risk are scoped to open projects.
+- **"At risk" has one definition.** An open project is at risk when it has at least one of:
+  - a work package with `isDelayed`
+  - a licence with `isOverdue`
+  - an invoice at least one day past `dueDate` with money still outstanding (invoice total less live receipts)
+
+  The rule is computed once, in `loadRisk()`, and feeds the at-risk count, each row's reasons, Critical Alerts and `/api/projects?atRisk=1`. Each reason is grouped by kind: how many records, plus the worst one named with its days late. There is never a numeric score.
+- **Outstanding is read from receipts.** Receipts don't move an invoice's status, so an invoice can be fully paid while still showing TAX_INVOICE_ISSUED. `invoiceAgeing()` now takes `outstandingPaise`, and every invoice read calculates it. Invoices of soft-deleted projects are left out of receivables.
+- **Expiring soon** means a GRANTED licence whose `validUntil` falls between now and now plus a window. The window is the licence's own `renewalLeadDays` if set; otherwise it comes from the master-data key `licence-expiry-settings` (`{ days }`), and falls back to 60 days.
+- **The billing chart draws only after 3 months of activity.** Before that it shows a sentence plus each month's actual figures. Dev data currently has 1 month, so the dashboard shows that sentence.
+- **Drill-downs run on the server.** No list page read filters from the URL before this phase, and the brief's "existing query-param pattern" didn't exist. The mechanism added is plain React Router `useSearchParams`, through `lib/useUrlFilters.ts`. `createResourceApi().useList(params)` sends the filters to the server, because list endpoints cap at 100 rows and filtering a loaded page would silently drop records. Each destination page shows a `UrlFilterNotice` with a "Show all" button. The Lead Inbox reads `?segment=`/`?stage=` only as its starting state.
+
+  Supported filters:
+  - Projects: `?portfolio`, `?atRisk`
+  - Work packages: `?projectId`, `?delayed`, `?status`, `?id`, `?openProjects`
+  - Licences: `?projectId`, `?overdue`, `?expiringSoon`, `?status`, `?id`, `?openProjects`
+  - Invoices: `?projectId`, `?receivable`, `?overdue`, `?bucket` (including `none`), `?id`
+  - Leads: `?segment`, `?stage`
+
+  Still unfiltered links: "Parked due for revisit" (the lead list has no parked filter) and the MOU/quotation counts (those pages have no status filter).
+- **Quick actions** reuse the existing modals, each shown only with WRITE on its module. Two gaps were filled:
+  - `LogActivityModal` shows a lead picker when opened without a lead.
+  - `LogProgressModal` is new, because no progress-update create existed anywhere. It is also on the Progress Updates page, so it isn't a dashboard-only entry point.
+- **New indexes** for five years of data: `receipts.invoiceId`, `licences.projectId`, `invoices.projectId`, `invoices.status`.
+- **Verified live** against a four-project test dataset (on track, delayed work package, overdue licence, overdue invoice with a partial receipt, plus a fully-receipted overdue invoice that must not count). 47 API checks passed, covering:
+  - each project's exact reasons
+  - weighted progress (26%, from 30% on ₹80k and 10% on ₹20k)
+  - the Delayed Work Packages row
+  - the Compliance by Project row
+  - the 31–60 bucket holding ₹1,00,000 (₹1,18,000 less ₹18,000 received)
+  - all three alerts in severity order
+  - every destination count matching its dashboard figure
+  - role gating: Sales Head, a temporary Liaison account (200 with compliance only), a temporary CLIENT account (403)
+
+  The rendered page and its links were then clicked through in the browser, with no console errors. The test records and temporary accounts were soft-deleted afterwards.
+
+**Deliberately deferred — separate P2/P3 scope per the SoW, not unfinished parts of this dashboard:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures (IRN/GSTN-sourced totals), client-portal data (the CLIENT role is kept off the dashboard until then), and offline site capture. The in-app Notifications engine is its own built module; Critical Alerts is a read-only view over the dashboard's risk reasons and doesn't send, store or duplicate notifications.
 
 **Still not started: modules past this project/admin slice.** Feasibility, DPR, licence visit/query logs, and billing conversion remain scaffold. Do not invent a client portal theme or per-project CSS tokens.
 

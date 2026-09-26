@@ -1,5 +1,15 @@
 import { LicenceBundle, LicenceStatus, ResponsibleParty } from "@methanova/shared-types";
 import { z } from "zod";
+import { listFilterFields } from "../../../utils/query.js";
+
+export const listLicencesQuerySchema = z.object({
+  id: listFilterFields.id,
+  projectId: listFilterFields.projectId,
+  status: listFilterFields.status,
+  overdue: listFilterFields.overdue,
+  expiringSoon: listFilterFields.expiringSoon,
+  openProjects: listFilterFields.openProjects,
+});
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
 const notInFuture = (label: string) =>

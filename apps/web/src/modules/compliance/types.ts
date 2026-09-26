@@ -16,4 +16,7 @@ export interface LicenceRow extends BaseRecord {
   targetDate?: string | null;
   /** Set once GRANTED (required on that transition); null before then. */
   validUntil?: string | null;
+  /** Derived by the API on every read — see derived.ts `licenceOverdue()`. */
+  isOverdue?: boolean;
+  daysOverdue?: number;
 }

@@ -2,27 +2,40 @@ import {
   AccessLevel,
   AppModule,
   canAccess,
+  PROJECT_PORTFOLIO_STATUS_OF,
+  ProjectRiskKind,
   type DashboardBillingMonthDto,
-  type DashboardComplianceDto,
+  type DashboardCriticalAlertDto,
   type DashboardDto,
+  type DashboardProjectHealthRowDto,
+  type ProjectRiskReasonDto,
+  type WorkPackageDelayReason,
   type Role,
 } from "@methanova/shared-types";
-import { getMonthlyInvoicedTotals } from "../../billing/invoices/invoices.service.js";
-import { getComplianceSummary } from "../../compliance/licences/licences.service.js";
-import { getActiveProjectsSummary } from "../../projects/project/project.service.js";
+import { getMonthlyInvoicedTotals, getReceivablesSummary } from "../../billing/invoices/invoices.service.js";
+import { getComplianceHealth, getLicenceExpiryWindowDays } from "../../compliance/licences/licences.service.js";
+import { getPortfolioCounts, listOpenProjects } from "../../projects/project/project.service.js";
 import { getMonthlyReceiptTotals } from "../../receivables/receipts/receipts.service.js";
+import {
+  getDelayedWorkPackagesSummary,
+  getProgressByProject,
+} from "../../schedule/work-packages/work-packages.service.js";
 import { listActivities } from "../activities/activities.service.js";
 import { getPipelineByStage } from "../leads/leads.service.js";
 import { getMouSummaryByStatus } from "../mou/mou.service.js";
 import { getOpenQuotationsSummary } from "../quotations/quotations.service.js";
-
-const EMPTY_COMPLIANCE: DashboardComplianceDto = { grantedCount: 0, totalCount: 0, byBundle: [] };
 
 /** "The last 10-15 across all leads" from the brief — a compact card, not the full Activity Log experience. */
 const RECENT_ACTIVITY_LIMIT = 12;
 
 /** Trailing window for the Billing card — long enough to show a shape, short enough that one busy month doesn't flatten the rest. */
 const BILLING_TRAILING_MONTHS = 6;
+
+/** Row caps — each section links to its full, filtered list for the rest. */
+const DELAYED_WORK_PACKAGE_LIMIT = 10;
+const TOP_OUTSTANDING_LIMIT = 10;
+const PROJECT_HEALTH_LIMIT = 50;
+const CRITICAL_ALERT_LIMIT = 6;
 
 /** "YYYY-MM" in UTC, matching both aggregations' own `$dateToString` grouping. */
 function monthKey(date: Date): string {
@@ -40,41 +53,158 @@ function trailingMonths(count: number): { keys: string[]; since: Date } {
   return { keys, since };
 }
 
+function access(role: Role) {
+  const read = (module: AppModule) => canAccess(role, module, AccessLevel.READ);
+  return {
+    crm: read(AppModule.crm),
+    projects: read(AppModule.projects),
+    schedule: read(AppModule.schedule),
+    compliance: read(AppModule.compliance),
+    billing: read(AppModule.billing),
+    receivables: read(AppModule.receivables),
+  };
+}
+
+type Access = ReturnType<typeof access>;
+
 /**
- * The Dashboard's one aggregation call — consolidated into a single round
- * trip from the client rather than one request per panel, fanning out
- * server-side to the real aggregations each domain module already owns
- * (leads, MOU, quotations, invoices, receipts, licences, projects/work
- * packages) plus the same flat cross-lead activity query the Activity Log
- * page uses.
+ * The three live-risk roll-ups over open projects, each fetched only when
+ * the caller can read its module. This is the single computation behind
+ * Project Health's reasons, the at-risk count, Critical Alerts and the
+ * `?atRisk=1` project list — so none of them can disagree.
+ */
+async function loadRisk(can: Access, now: Date) {
+  const openProjects = await listOpenProjects();
+  const openIds = openProjects.map((project) => project._id);
+  const windowDays = can.compliance ? await getLicenceExpiryWindowDays() : 0;
+  const [delayed, compliance, receivables] = await Promise.all([
+    can.schedule ? getDelayedWorkPackagesSummary(openIds, now, DELAYED_WORK_PACKAGE_LIMIT) : null,
+    can.compliance ? getComplianceHealth(openIds, now, windowDays, CRITICAL_ALERT_LIMIT) : null,
+    can.receivables ? getReceivablesSummary(now, TOP_OUTSTANDING_LIMIT, CRITICAL_ALERT_LIMIT) : null,
+  ]);
+
+  const reasons = new Map<string, ProjectRiskReasonDto[]>();
+  const add = (projectId: unknown, reason: ProjectRiskReasonDto) => {
+    const key = String(projectId);
+    reasons.set(key, [...(reasons.get(key) ?? []), reason]);
+  };
+  for (const row of delayed?.byProject ?? []) {
+    add(row._id, {
+      kind: ProjectRiskKind.DELAYED_WORK_PACKAGE,
+      count: row.count,
+      worstId: String(row.worstId),
+      worstLabel: row.worstLabel,
+      worstDays: row.worstDays,
+    });
+  }
+  for (const row of compliance?.overdueByProject ?? []) {
+    add(row._id, {
+      kind: ProjectRiskKind.OVERDUE_LICENCE,
+      count: row.count,
+      worstId: String(row.worstId),
+      worstLabel: row.worstLabel,
+      worstDays: row.worstDays,
+    });
+  }
+  const openIdSet = new Set(openIds.map(String));
+  for (const row of receivables?.overdueByProject ?? []) {
+    // Receivables span every project, closed ones included (money is still
+    // owed after handover), but project risk is about open projects.
+    if (!openIdSet.has(String(row._id))) continue;
+    add(row._id, {
+      kind: ProjectRiskKind.OVERDUE_INVOICE,
+      count: row.count,
+      worstId: String(row.worstId),
+      worstLabel: row.worstLabel,
+      worstDays: row.worstDays,
+      outstandingPaise: row.outstandingPaise,
+    });
+  }
+
+  const evaluatedKinds = [
+    ...(can.schedule ? [ProjectRiskKind.DELAYED_WORK_PACKAGE] : []),
+    ...(can.compliance ? [ProjectRiskKind.OVERDUE_LICENCE] : []),
+    ...(can.receivables ? [ProjectRiskKind.OVERDUE_INVOICE] : []),
+  ];
+  return { openProjects, delayed, compliance, receivables, reasons, evaluatedKinds };
+}
+
+/** The ids behind the dashboard's at-risk count, for the `?atRisk=1` project list — the same computation, the same caller permissions. */
+export async function getAtRiskProjectIds(actorRole: Role): Promise<string[]> {
+  const risk = await loadRisk(access(actorRole), new Date());
+  return [...risk.reasons.keys()];
+}
+
+/** Most days late first; ties go to the larger amount owed. */
+function criticalAlerts(risk: Awaited<ReturnType<typeof loadRisk>>): DashboardCriticalAlertDto[] {
+  const alerts: DashboardCriticalAlertDto[] = [
+    ...(risk.delayed?.rows ?? []).map((row) => ({
+      kind: ProjectRiskKind.DELAYED_WORK_PACKAGE,
+      id: String(row._id),
+      projectId: String(row.projectId),
+      projectCode: row.projectCode ?? "—",
+      client: row.client ?? "—",
+      label: row.name,
+      days: row.daysDelayed,
+    })),
+    ...(risk.compliance?.overdueTop ?? []).map((row) => ({
+      kind: ProjectRiskKind.OVERDUE_LICENCE,
+      id: String(row._id),
+      projectId: String(row.projectId),
+      projectCode: row.projectCode ?? "—",
+      client: row.client ?? "—",
+      label: row.label,
+      days: row.daysOverdue,
+    })),
+    ...(risk.receivables?.overdueTop ?? []).map((row) => ({
+      kind: ProjectRiskKind.OVERDUE_INVOICE,
+      id: String(row._id),
+      projectId: row.projectId ? String(row.projectId) : "",
+      projectCode: row.projectCode ?? "—",
+      client: row.client ?? "—",
+      label: row.number,
+      days: row.daysPastDue,
+      outstandingPaise: row.outstandingPaise,
+    })),
+  ];
+  return alerts
+    .sort((a, b) => b.days - a.days || (b.outstandingPaise ?? 0) - (a.outstandingPaise ?? 0))
+    .slice(0, CRITICAL_ALERT_LIMIT);
+}
+
+/**
+ * The Dashboard's one aggregation call: a single round trip that fans out
+ * server-side to the aggregation pipelines each domain module owns.
  *
- * The route itself only requires `crm:READ` (see `dashboard.routes.ts`), but
- * Billing, Compliance and Projects are their own permission-matrix modules —
- * a Sales Head/BDE holds `crm:FULL` and `billing:NONE`/`compliance:NONE`.
- * Those sections are therefore fetched (and returned) only when the
- * caller's own role actually holds the matching `:READ`, computed here from
- * the role on the verified token, never a client-supplied flag — the same
- * server-side re-derivation My Day's team/mine toggle already does.
+ * The route requires only authentication; every section is gated here, on
+ * the role from the verified token, by its own module's `:READ` — CRM
+ * sections by `crm`, Project Health by `projects`, delayed work packages by
+ * `schedule`, Compliance by `compliance`, the billing chart by `billing`,
+ * receivables by `receivables`. A section the caller can't read is never
+ * computed and comes back `null`/`[]`, never faked. That per-section gate is
+ * what lets a Liaison Officer (compliance, no crm) see Compliance Health
+ * without also being able to fetch lead data through this endpoint.
  */
 export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
-  const canReadBilling = canAccess(actorRole, AppModule.billing, AccessLevel.READ);
-  const canReadCompliance = canAccess(actorRole, AppModule.compliance, AccessLevel.READ);
-  const canReadProjects = canAccess(actorRole, AppModule.projects, AccessLevel.READ);
+  const can = access(actorRole);
+  const now = new Date();
   const { keys: months, since } = trailingMonths(BILLING_TRAILING_MONTHS);
 
-  const [pipeline, mou, quotations, activityPage, invoicedByMonth, collectedByMonth, compliance, activeProjects] =
+  const [pipeline, mou, quotations, activityPage, invoicedByMonth, collectedByMonth, risk, portfolio] =
     await Promise.all([
-      getPipelineByStage(),
-      getMouSummaryByStatus(),
-      getOpenQuotationsSummary(),
-      listActivities({ page: 1, pageSize: RECENT_ACTIVITY_LIMIT, hasFollowUp: false, overdueFollowUp: false }),
-      canReadBilling ? getMonthlyInvoicedTotals(since) : Promise.resolve(new Map<string, number>()),
-      canReadBilling ? getMonthlyReceiptTotals(since) : Promise.resolve(new Map<string, number>()),
-      canReadCompliance ? getComplianceSummary() : Promise.resolve(EMPTY_COMPLIANCE),
-      canReadProjects ? getActiveProjectsSummary() : Promise.resolve([]),
+      can.crm ? getPipelineByStage() : Promise.resolve([]),
+      can.crm ? getMouSummaryByStatus() : Promise.resolve([]),
+      can.crm ? getOpenQuotationsSummary() : Promise.resolve(null),
+      can.crm
+        ? listActivities({ page: 1, pageSize: RECENT_ACTIVITY_LIMIT, hasFollowUp: false, overdueFollowUp: false })
+        : Promise.resolve({ items: [] }),
+      can.billing ? getMonthlyInvoicedTotals(since) : Promise.resolve(new Map<string, number>()),
+      can.billing ? getMonthlyReceiptTotals(since) : Promise.resolve(new Map<string, number>()),
+      loadRisk(can, now),
+      can.projects ? getPortfolioCounts() : Promise.resolve(null),
     ]);
 
-  const billing: DashboardBillingMonthDto[] = canReadBilling
+  const billing: DashboardBillingMonthDto[] = can.billing
     ? months.map((month) => ({
         month,
         invoicedPaise: invoicedByMonth.get(month) ?? 0,
@@ -82,5 +212,57 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
       }))
     : [];
 
-  return { pipeline, mou, quotations, recentActivity: activityPage.items, billing, compliance, activeProjects };
+  let projectHealth: DashboardDto["projectHealth"] = null;
+  if (can.projects && portfolio) {
+    const progress = await getProgressByProject(risk.openProjects.map((project) => project._id));
+    const rows: DashboardProjectHealthRowDto[] = risk.openProjects.map((project) => ({
+      id: String(project._id),
+      code: project.code,
+      client: project.name,
+      projectManagerName: project.projectManagerName,
+      lifecycleStatus: project.status,
+      portfolioStatus: PROJECT_PORTFOLIO_STATUS_OF[project.status],
+      progressPct: progress.get(String(project._id)) ?? null,
+      targetCommissioningDate: project.targetCommissioningDate ? project.targetCommissioningDate.toISOString() : null,
+      revisedTargetDate: project.revisedTargetDate ? project.revisedTargetDate.toISOString() : null,
+      reasons: risk.reasons.get(String(project._id)) ?? [],
+    }));
+    const atRiskCount = rows.filter((row) => row.reasons.length > 0).length;
+    projectHealth = {
+      portfolio: { ...portfolio, atRiskCount, onTrackCount: portfolio.openCount - atRiskCount },
+      rows: rows
+        .sort((a, b) => b.reasons.length - a.reasons.length || a.code.localeCompare(b.code))
+        .slice(0, PROJECT_HEALTH_LIMIT),
+      evaluatedKinds: risk.evaluatedKinds,
+    };
+  }
+
+  return {
+    pipeline,
+    mou,
+    quotations,
+    recentActivity: activityPage.items,
+    billing,
+    compliance: risk.compliance?.summary ?? null,
+    projectHealth,
+    delayedWorkPackages: risk.delayed
+      ? {
+          totalCount: risk.delayed.totalCount,
+          rows: risk.delayed.rows.map((row) => ({
+            id: String(row._id),
+            projectId: String(row.projectId),
+            projectCode: row.projectCode ?? "—",
+            client: row.client ?? "—",
+            name: row.name,
+            plannedEnd: new Date(row.plannedEnd).toISOString(),
+            percentComplete: row.percentComplete ?? 0,
+            daysDelayed: row.daysDelayed,
+            responsibleUserName: row.responsibleUserName ?? null,
+            delayReason: (row.delayReason as WorkPackageDelayReason | null) ?? null,
+          })),
+        }
+      : null,
+    receivables: risk.receivables?.summary ?? null,
+    criticalAlerts: criticalAlerts(risk),
+  };
 }

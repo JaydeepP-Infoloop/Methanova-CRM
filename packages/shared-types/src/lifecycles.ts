@@ -156,6 +156,48 @@ export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
 ];
 
 /**
+ * The SoW's four portfolio statuses, as a *reporting view* over the real
+ * five-state `ProjectStatus` lifecycle — not a second lifecycle. TERMINATED
+ * has no source state yet (nothing can terminate a project today), so it
+ * maps from nothing and the dashboard reports it as "Not available" rather
+ * than a zero that would claim it was counted.
+ */
+export const ProjectPortfolioStatus = {
+  ACTIVE: "ACTIVE",
+  ON_HOLD: "ON_HOLD",
+  COMPLETED: "COMPLETED",
+  TERMINATED: "TERMINATED",
+} as const;
+export type ProjectPortfolioStatus = (typeof ProjectPortfolioStatus)[keyof typeof ProjectPortfolioStatus];
+export const PROJECT_PORTFOLIO_STATUS_ORDER: ProjectPortfolioStatus[] = [
+  ProjectPortfolioStatus.ACTIVE,
+  ProjectPortfolioStatus.ON_HOLD,
+  ProjectPortfolioStatus.COMPLETED,
+  ProjectPortfolioStatus.TERMINATED,
+];
+
+export const PROJECT_PORTFOLIO_STATUS_OF: Record<ProjectStatus, ProjectPortfolioStatus> = {
+  ACTIVE: ProjectPortfolioStatus.ACTIVE,
+  COMMISSIONING: ProjectPortfolioStatus.ACTIVE,
+  ON_HOLD: ProjectPortfolioStatus.ON_HOLD,
+  HANDED_OVER: ProjectPortfolioStatus.COMPLETED,
+  OM: ProjectPortfolioStatus.COMPLETED,
+};
+
+/** The lifecycle statuses behind one portfolio status — empty for TERMINATED. */
+export function projectStatusesIn(portfolio: ProjectPortfolioStatus): ProjectStatus[] {
+  return (Object.keys(PROJECT_PORTFOLIO_STATUS_OF) as ProjectStatus[]).filter(
+    (status) => PROJECT_PORTFOLIO_STATUS_OF[status] === portfolio,
+  );
+}
+
+/** "Open" = not Completed: the projects whose schedule, licences and risks are still live. */
+export const OPEN_PROJECT_STATUSES: ProjectStatus[] = [
+  ...projectStatusesIn(ProjectPortfolioStatus.ACTIVE),
+  ...projectStatusesIn(ProjectPortfolioStatus.ON_HOLD),
+];
+
+/**
  * Who executes a work package (SoW §8.1). A third value beyond
  * `ResponsibleParty`'s Methanova/Client, because sub-contracted work is
  * neither — and client-scope packages have to be distinguishable on the

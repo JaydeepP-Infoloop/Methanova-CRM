@@ -13,7 +13,7 @@ import { Modal } from "../../../components/Modal";
 import { useToast } from "../../../components/Toast";
 import { ApiError } from "../../../lib/apiClient";
 import { useAssignableUsers, useLogActivity } from "../api/activities.api";
-import { leadsApi } from "../api/leads.api";
+import { leadsApi, useLeadList } from "../api/leads.api";
 
 const inputClass = CONTROL_CLASS;
 
@@ -46,12 +46,18 @@ export function LogActivityModal({
   onLogged,
 }: LogActivityModalProps) {
   const toast = useToast();
-  const logActivity = useLogActivity(leadId);
+  // Opened without a lead (the Dashboard's quick action), the modal asks for
+  // one first; every other entry point passes it in and never sees the picker.
+  const needsLeadPicker = !leadId;
+  const [pickedLeadId, setPickedLeadId] = useState("");
+  const targetLeadId = leadId ?? (pickedLeadId || undefined);
+  const leadOptions = useLeadList({ page: 1, pageSize: 100, sort: "newest" }, { enabled: open && needsLeadPicker });
+  const logActivity = useLogActivity(targetLeadId);
   const users = useAssignableUsers();
   const firstFieldRef = useRef<HTMLSelectElement>(null);
 
   // Only fetched when the caller did not supply contacts and the modal is open.
-  const leadQuery = leadsApi.useItem(contactNames === undefined && open ? leadId : undefined);
+  const leadQuery = leadsApi.useItem(contactNames === undefined && open ? targetLeadId : undefined);
   const availableContactNames =
     contactNames ??
     ((leadQuery.data as { contacts?: { name: string }[] } | undefined)?.contacts ?? []).map(
@@ -81,6 +87,7 @@ export function LogActivityModal({
 
   useEffect(() => {
     if (!open) return;
+    setPickedLeadId("");
     setType(ActivityType.CALL);
     setOccurredAt(localDateTimeValue(new Date()));
     setSummary("");
@@ -99,6 +106,7 @@ export function LogActivityModal({
 
   function validate(): boolean {
     const next: Record<string, string> = {};
+    if (!targetLeadId) next.leadId = "Pick the lead this activity is against";
     if (!summary.trim()) next.summary = "Summary is required";
     if (!occurredAt) next.occurredAt = "When it happened is required";
     else if (new Date(occurredAt) > new Date()) next.occurredAt = "An activity cannot be in the future";
@@ -188,6 +196,29 @@ export function LogActivityModal({
         <p role="alert" className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-600/20">
           {banner}
         </p>
+      )}
+
+      {needsLeadPicker && (
+        <div className="mb-4">
+          <Field label="Lead" htmlFor="activityLead" required error={errors.leadId}>
+            <select
+              id="activityLead"
+              className={inputClass}
+              value={pickedLeadId}
+              onChange={(e) => {
+                setPickedLeadId(e.target.value);
+                setExternalNames([]);
+              }}
+            >
+              <option value="">Select a lead…</option>
+              {(leadOptions.data?.items ?? []).map((lead) => (
+                <option key={lead.id} value={lead.id}>
+                  {lead.leadCode} · {lead.companyName}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

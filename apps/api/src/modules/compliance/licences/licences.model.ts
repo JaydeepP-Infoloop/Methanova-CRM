@@ -7,7 +7,7 @@ export interface LicenceAttrs {
 }
 
 const schema = new Schema({
-    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true },
+    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
     /** The master row this checklist entry was instantiated from — see signMou(). Denormalises bundle/authority below at creation time. */
     licenceTypeId: { type: Schema.Types.ObjectId, ref: "LicenceType", default: null },
     bundle: { type: String, required: true, enum: ["PRE_CTE", "CTE", "CTO"] },

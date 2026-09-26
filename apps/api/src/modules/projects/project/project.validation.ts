@@ -1,7 +1,14 @@
-import { ProjectStatus, ResponsibleParty } from "@methanova/shared-types";
+import { ProjectPortfolioStatus, ProjectStatus, ResponsibleParty } from "@methanova/shared-types";
 import { z } from "zod";
+import { flagParam, listFilterFields } from "../../../utils/query.js";
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
+
+export const listProjectsQuerySchema = z.object({
+  mine: flagParam.optional(),
+  portfolio: z.nativeEnum(ProjectPortfolioStatus).optional(),
+  atRisk: listFilterFields.atRisk,
+});
 
 /**
  * Projects are normally created by `signMou()`, which copies the contractual

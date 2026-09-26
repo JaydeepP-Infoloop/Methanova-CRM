@@ -129,15 +129,23 @@ Topbar keeps: collapse toggle and Jump (⌘K / Ctrl+K, a client-side route list 
 
 Mapped onto real Methanova entities — not generic placeholders. Respect `PROJECT_CONTEXT.md` phasing: **this document describes the target visual layer; it does not authorise building business-module behaviour that is still P2/P3 there.**
 
-### Dashboard (`modules/reports/pages/Dashboard.tsx`)
-Currently four hardcoded stat cards. Target composition:
-- **Stat row**: Open Leads · Pending Approvals · Overdue Licences · Outstanding Receivables (already the right four) + trend deltas vs previous period.
-- **Left panel — "Billing & collections"**: grouped bar chart, invoiced vs collected per month, paise formatted via `lib/formatters.ts`. This is our analogue of the reference's revenue/expenses chart.
-- **Right panel — "Compliance health"**: `DonutMeter` showing licences granted ÷ total required across active projects, with a checklist beneath (Pre-CTE / CTE / CTO bundle progress). Compliance status is the thing a Director actually worries about, so it earns the prominent slot.
-- **Bottom left — "Active projects"**: table with `IdentityCell` (client + site), current work package, planned end date, value, status pill.
-- **Bottom right — `AttentionRail`** (not `ActivityRail` — see the naming note in §3): overdue licence queries, invoices past due, work packages blocked — each with an urgency pill and a link to the record.
+### Dashboard (`modules/reports/pages/Dashboard.tsx`) — built, every panel on live data
+Top to bottom. Each section is shown only when the viewer's role can read its module; this is one page of gated widgets, not a page per role:
+- **Quick actions** in the page header (`Button size="sm" variant="secondary"`): New lead, Log activity, New quotation, New MOU, New progress update. Each opens the existing modal (`AddLeadWizard`, `LogActivityModal` with a lead picker when no lead is passed, `CreateQuotationModal`, `CreateMouModal`, `LogProgressModal`), and each shows only with WRITE on its module.
+- **Critical alerts**: at most 6 rows, each linking to its exact record (`?id=`). The rows are the worst delayed work packages, licences past target and invoices past due, taken from the same records as Project Health's reasons. Tone is always `problem`. This is not a notification feed; the bell is the notification system.
+- **CRM strip**: five `StatCard`s. Unassigned and Awaiting first response open the Lead Inbox on that segment (`?segment=`).
+- **Portfolio**: one `StatCard` per SoW status (Active, On hold, Completed, Terminated), plus At risk. Terminated shows "Not available" and has no link, because nothing can be terminated yet.
+- **Project health table**: project, client, PM, stage (the real lifecycle status), progress, target, revised target, SoW status, and the risk reasons. Each reason is a sentence ("1 delayed work package — worst: X, 12 days late") linking to that project's filtered list, and a project with none shows an `On track` pill. There is never a numeric score. A missing field reads "Not available"; a target that was never revised reads "Not revised", because that is a real state, not missing data.
+- **Delayed work packages**: capped table; each row opens its work package, and "View all" opens the full delayed list.
+- **Billing & collections**: the chart draws only once at least 3 months have activity. Before that, a sentence plus each month's actual figures.
+- **Compliance health**: `DonutMeter`, then past-target and expiring-soon counts, then per-status counts; every figure is a link.
+- **Compliance by project**: table; each row opens that project's licences.
+- **Receivables ageing**: one `StatCard` per `AgeingBucket` plus "No due date", each opening the invoice list on that bucket.
+- **Top outstanding receivables**: capped table sorted by amount; "View all" opens `?receivable=1`.
+- **Sales pipeline**: stage rows open the Lead Inbox on that stage.
+- **Recent activity**.
 
-Role-aware: Accounts should land on collections, Liaison on compliance. Same components, different panel order per role — do this with a simple per-role panel list, not nine bespoke dashboards.
+**Drill-down pattern.** Every count or row links to its source list through that list's own query string (`?delayed=1`, `?bucket=31-60`, `?projectId=…`). The page reads these with `useUrlFilters`, sends them to the server as list filters, and shows a `UrlFilterNotice` ("Filtered: … · Show all"). Filtering runs on the server, because list endpoints cap at 100 rows. No trend deltas are shown: the app keeps no period snapshots to compare against, and a made-up percentage is worse than none.
 
 ### CRM — Leads
 
