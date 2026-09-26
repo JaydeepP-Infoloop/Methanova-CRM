@@ -140,10 +140,14 @@ Companion docs: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for what the system d
   - **Compliance overdue / expiring-soon counts** had already landed in Phase 3. The window is each licence's `renewalLeadDays`, else the 60-day master-data default.
   - **Project Health gains a Current work package column:** the earliest-`plannedStart` package that is still open and under 100%, else "No schedule yet" or "All complete".
   - **Fixed:** the dashboard no longer 403s on `/api/schedule/work-packages` for roles without schedule access.
-- [ ] **Still open for later dashboard phases:**
-  - Active Projects health-pill styling. This is visual only; the reasons and data exist.
-  - The Pending Approvals widget. It depends on the Director-approval-threshold gate, which today only *refuses* an above-threshold `signMou()` with a 403. There is no pending-approval record or queue to list yet, so the widget needs that approval flow first.
-  - Project Manager, Accounts and Liaison-specific KPI row variants. Each is one new `KPI_ROW_BY_ROLE` entry, with no re-architecture.
+- [x] **Dashboard redesign, final phase — done. The dashboard redesign plan is complete end to end.**
+  - **Project Health "Health" column:** an `At risk` pill (problem tone) with its linked reasons beneath, or `On track` (positive tone), both driven only by the server's reasons. `Not assessed` (neutral) shows for a viewer who can check none of the three risk kinds.
+  - **My Day widget beside Recent Activity** (two columns): the viewer's own overdue and due-today commitments, at most 4, from the existing `useMyDay` / `/api/crm/my-day`. It has an "Open My Day" link and a real "Nothing due today" empty state.
+  - The risk pipelines stayed as grouped per-collection aggregations, not `$lookup`; see PROJECT_CONTEXT.md for why.
+- [ ] **Out of scope going forward — not unfinished redesign work:**
+  - **The Pending Approvals widget.** The Director-approval-threshold gate exists, but only as a refusal: `signMou()` returns 403 above the threshold unless the signer holds admin/FULL. There is no pending-approval record, request or queue, so there is nothing yet for a widget to list. It needs an approval workflow first.
+  - **Project Manager, Accounts and Liaison-specific KPI rows.** `KPI_ROW_BY_ROLE` supports them (one entry each), but they aren't defined. Project Manager and Accounts see the lead row meanwhile; Liaison sees no KPI row, since it has no CRM access.
+  - **Small-screen shell.** The sidebar doesn't collapse on phones. It affects every page, not just the dashboard, and is tracked as its own task.
 - [ ] **Deferred — separate P2/P3 scope per the SoW, not unfinished dashboard work:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures, client-portal data (and a client-scoped dashboard), offline site capture, and a TERMINATED project state (no lifecycle transition exists to end a project).
 - [ ] Reporting endpoints
 - [ ] **CRM Reports**

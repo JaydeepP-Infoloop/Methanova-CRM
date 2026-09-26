@@ -165,6 +165,8 @@ const pipelineColumns: ResourceColumn<PipelineRow>[] = [
 
 interface HealthRow extends DashboardProjectHealthRowDto, Record<string, unknown> {
   _id: string;
+  /** False when the viewer's role can see none of the three risk kinds (`evaluatedKinds` is empty). */
+  assessed: boolean;
 }
 interface DelayedRow extends DashboardDelayedWorkPackageDto, Record<string, unknown> {
   _id: string;
@@ -226,25 +228,34 @@ const healthColumns: ResourceColumn<HealthRow>[] = [
   { key: "portfolioStatus", label: "Status", render: (row) => <StatusPill value={row.portfolioStatus} /> },
   {
     key: "reasons",
-    label: "Risk reasons",
+    label: "Health",
     sortValue: (row) => row.reasons.length,
     sortable: true,
+    // At risk / On track comes only from the server's reasons — never
+    // recomputed here — and the pill is never shown without the reasons that
+    // earned it. "Not assessed" when the viewer can't see any of the three
+    // risk kinds: "On track" would claim checks that never ran for them.
     render: (row) =>
-      row.reasons.length === 0 ? (
+      !row.assessed ? (
+        <StatusPill value="Not assessed" tone="neutral" />
+      ) : row.reasons.length === 0 ? (
         <StatusPill value="On track" tone="positive" />
       ) : (
-        <ul className="space-y-1" onClick={(event) => event.stopPropagation()}>
-          {row.reasons.map((reason) => (
-            <li key={reason.kind}>
-              <Link
-                to={riskHref(reason.kind, { projectId: row.id })}
-                className="text-xs text-rose-700 hover:underline"
-              >
-                {reasonText(reason)}
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-1.5" onClick={(event) => event.stopPropagation()}>
+          <StatusPill value="At risk" tone="problem" />
+          <ul className="space-y-1">
+            {row.reasons.map((reason) => (
+              <li key={reason.kind}>
+                <Link
+                  to={riskHref(reason.kind, { projectId: row.id })}
+                  className="text-xs text-rose-700 hover:underline"
+                >
+                  {reasonText(reason)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       ),
   },
 ];
@@ -514,6 +525,10 @@ export function Dashboard() {
 
   const summary = useLeadSummary(DASHBOARD_SUMMARY_FILTERS, { enabled: canReadCrm });
   const myDay = useMyDay(canSeeTeamQueue ? "team" : "mine", { enabled: canReadCrm });
+  // The widget is always the viewer's own day. For roles whose KPI already
+  // reads "mine" this is the very same cached query; a team-view role (Sales
+  // Head, Director) gets one more call to the same endpoint.
+  const myDayMine = useMyDay("mine", { enabled: canReadCrm });
   const dashboard = useDashboard({ enabled: dashboardEnabled });
   const [quickAction, setQuickAction] = useState<QuickAction>(null);
 
@@ -546,7 +561,11 @@ export function Dashboard() {
   const compliance = data?.compliance;
   const projectHealth = data?.projectHealth;
   const portfolio = projectHealth?.portfolio;
-  const healthRows: HealthRow[] = (projectHealth?.rows ?? []).map((row) => ({ ...row, _id: row.id }));
+  const healthRows: HealthRow[] = (projectHealth?.rows ?? []).map((row) => ({
+    ...row,
+    _id: row.id,
+    assessed: (projectHealth?.evaluatedKinds.length ?? 0) > 0,
+  }));
   const unevaluatedKinds = projectHealth
     ? (Object.values(ProjectRiskKind) as ProjectRiskKind[]).filter((kind) => !projectHealth.evaluatedKinds.includes(kind))
     : [];
@@ -559,6 +578,12 @@ export function Dashboard() {
   const receivables = data?.receivables;
   const outstandingRows: OutstandingRow[] = (receivables?.top ?? []).map((row) => ({ ...row, _id: row.invoiceId }));
   const alerts = data?.criticalAlerts ?? [];
+  const MY_DAY_WIDGET_LIMIT = 4;
+  const myDayDueCount = (myDayMine.data?.overdue.count ?? 0) + (myDayMine.data?.today.count ?? 0);
+  const myDayItems = [
+    ...[...(myDayMine.data?.overdue.items ?? [])].sort((a, b) => b.daysLate - a.daysLate),
+    ...(myDayMine.data?.today.items ?? []),
+  ].slice(0, MY_DAY_WIDGET_LIMIT);
   const canSeeAnyRisk = canReadSchedule || canReadCompliance || canReadReceivables;
 
   const quickActions: { key: Exclude<QuickAction, null>; label: string; allowed: boolean }[] = [
@@ -919,27 +944,87 @@ export function Dashboard() {
       )}
 
       {canReadCrm && (
-        <Card
-          title="Recent Activity"
-          bodyPadding={false}
-          action={
-            <Link to="/app/crm/activities" className="text-xs font-medium text-methanova-green hover:underline">
-              View all
-            </Link>
-          }
-        >
-          <ActivityRail
-            items={recentActivity}
-            showLead
-            isLoading={loading}
-            emptyState={
-              <div className="px-5 py-10 text-center">
-                <p className="text-sm font-medium text-slate-900">No activity logged yet</p>
-                <p className="mt-1 text-sm text-slate-500">Calls, visits and emails across every lead show up here.</p>
-              </div>
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          <Card
+            title="Recent Activity"
+            bodyPadding={false}
+            action={
+              <Link to="/app/crm/activities" className="text-xs font-medium text-methanova-green hover:underline">
+                View all
+              </Link>
             }
-          />
-        </Card>
+          >
+            <ActivityRail
+              items={recentActivity}
+              showLead
+              isLoading={loading}
+              emptyState={
+                <div className="px-5 py-10 text-center">
+                  <p className="text-sm font-medium text-slate-900">No activity logged yet</p>
+                  <p className="mt-1 text-sm text-slate-500">Calls, visits and emails across every lead show up here.</p>
+                </div>
+              }
+            />
+          </Card>
+
+          <Card
+            title={myDayMine.data ? `My Day · ${myDayDueCount} due` : "My Day"}
+            bodyPadding={false}
+            action={
+              <Link to="/app/my-day" className="text-xs font-medium text-methanova-green hover:underline">
+                Open My Day
+              </Link>
+            }
+          >
+            {myDayMine.isLoading ? (
+              <div className="p-5">
+                <Skeleton className="h-24 w-full" />
+              </div>
+            ) : myDayItems.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <p className="text-sm font-medium text-slate-900">Nothing due today</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {myDayMine.data && myDayMine.data.thisWeek.count > 0
+                    ? `${plural(myDayMine.data.thisWeek.count, "commitment")} due later this week.`
+                    : "No overdue or due-today follow-ups on your leads."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <ul className="divide-y divide-slate-100">
+                  {myDayItems.map((row) => (
+                    <li key={`${row.source}-${row.leadId}`}>
+                      <Link
+                        to={`/app/crm/leads/${row.leadId}`}
+                        className="flex items-start justify-between gap-3 px-5 py-3 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-methanova-gold motion-reduce:transition-none"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-900">{row.commitmentText || "Follow up"}</p>
+                          <p className="mt-0.5 truncate text-xs text-slate-500">
+                            {row.companyName} · {row.leadCode}
+                          </p>
+                        </div>
+                        {row.daysLate > 0 ? (
+                          <StatusPill value={`${plural(row.daysLate, "day")} overdue`} tone="problem" />
+                        ) : (
+                          <StatusPill value="Due today" tone="waiting" />
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                {myDayDueCount > myDayItems.length && (
+                  <p className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">
+                    +{myDayDueCount - myDayItems.length} more on{" "}
+                    <Link to="/app/my-day" className="font-medium text-methanova-green hover:underline">
+                      My Day
+                    </Link>
+                  </p>
+                )}
+              </>
+            )}
+          </Card>
+        </div>
       )}
 
       <AddLeadWizard

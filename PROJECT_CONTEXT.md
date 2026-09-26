@@ -292,6 +292,23 @@ Every panel on `Dashboard.tsx` now reads real data — the Billing, Compliance a
   - every KPI figure equal to its drill-down list
   - Sales Head view unchanged, with no failed requests
 
+**Done: dashboard redesign, final phase — project health pill and My Day widget.** This completes the redesign plan.
+
+- **Checked first, against the code.** There was no "reference-image delta pass" in the repo history or docs, so no work-package fraction or compliance bullets existed to reconcile. The KPI phase's row and retention-aware receivables were in place. `getActiveProjectsSummary()` no longer exists (Phase 3 replaced it with Project Health), and the risk reasons were already computed server-side.
+- **Aggregation shape kept, on purpose.** The brief asked for `$lookup` joins across work_packages, licences and invoices. The reasons already come from one grouped aggregation per collection, keyed by `projectId` (`getDelayedWorkPackagesSummary`, `getComplianceHealth`, `getReceivablesSummary`), joined once in `loadRisk()`. That is three queries no matter how many projects there are, so it isn't N+1. A `$lookup` from projects would run a correlated sub-query per project, the scaling problem the brief wanted to avoid, so the pipelines are unchanged.
+- **Health column** (it replaces "Risk reasons") shows an `At risk` pill in the problem tone, with its reasons listed beneath and each one linking to that project's filtered list, or an `On track` pill in the positive tone. The pill only reflects the server's reasons; the client never recomputes risk. The reasons are always visible rather than on hover, which keeps them explainable on touch screens as well. A viewer whose role can check none of the three risk kinds (`evaluatedKinds` empty, e.g. Sales Head) gets a neutral `Not assessed` pill: "On track" would claim checks that never ran for them. This also fixes Phase 3, where such viewers saw "On track".
+- **My Day widget**, paired with Recent Activity in two columns (`lg:grid-cols-2`, stacking on narrow screens). It uses the existing `useMyDay` hook and `/api/crm/my-day` endpoint; there's no new endpoint and nothing is recomputed.
+  - Scope is always `mine`, because the widget is the viewer's own day. For roles whose KPI card already reads `mine`, that's the same cached query. Team-view roles (Sales Head, Director) make one more call to the same endpoint.
+  - It lists up to 4 items: overdue first (most days late first), then due today. Each shows the commitment text, company and lead code, and a "N days overdue" (problem tone) or "Due today" (waiting tone) pill, and links to the lead.
+  - "+N more on My Day" appears when there are more, and "Open My Day" links to the full page.
+  - The empty state is "Nothing due today", with "N commitments due later this week" when that is true.
+- **Verified live:**
+  - A project with only a delayed work package showed At risk with exactly one reason (the package, 8 days late, linking to its filtered list). A project with none of the three conditions showed On track.
+  - A test lead owned by the Director, due today, appeared in the widget as "Due today", after the Director's existing 1-day-overdue item. "Open My Day" opened `/app/my-day` listing it.
+  - Sales Head saw "Not assessed" with the footnote, and their own due-today item. A BDE with nothing due saw the empty state and "3 commitments due later this week".
+  - The two cards sat side by side at 1440px and stacked at 375px. No failed requests, and the test data was soft-deleted.
+  - Found in passing, not caused by this change: on phone-width screens the 256px sidebar stays expanded, so every card is squeezed. Flagged as a separate task.
+
 **Deliberately deferred — separate P2/P3 scope per the SoW, not unfinished parts of this dashboard:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures (IRN/GSTN-sourced totals), client-portal data (the CLIENT role is kept off the dashboard until then), and offline site capture. The in-app Notifications engine is its own built module; Critical Alerts is a read-only view over the dashboard's risk reasons and doesn't send, store or duplicate notifications.
 
 **Still not started: modules past this project/admin slice.** Feasibility, DPR, licence visit/query logs, and billing conversion remain scaffold. Do not invent a client portal theme or per-project CSS tokens.
