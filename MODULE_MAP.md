@@ -130,7 +130,7 @@ Companion docs: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for what the system d
   - **Drill-downs:** every count and row opens its source list through the query string, filtered on the server (`useUrlFilters` → `useList(params)` → list-endpoint filters), with a `UrlFilterNotice` offering "Show all".
   - **Verified live:** 47 API checks on a four-project test dataset, plus browser click-through.
   - **MOU and Quotation pages** have a server-side status filter driven by the URL (`?status=`, comma list allowed; quotations also `?open=1`). The Signed MOUs, MOUs in progress and Open quotations links land on it, and each list's count matches its dashboard figure.
-  - **Link not yet filterable:** "Parked due for revisit" (the lead list has no parked filter).
+  - **Lead Inbox parked segments:** "Parked" (all) and "Due for revisit" (revisit date today or earlier), backed by server-side `parked`/`parkedDue` filters and whole-collection counts. The dashboard's "Parked due for revisit" card lands on the latter. Every dashboard count now opens a filtered list.
 - [ ] **Deferred — separate P2/P3 scope per the SoW, not unfinished dashboard work:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures, client-portal data (and a client-scoped dashboard), offline site capture, and a TERMINATED project state (no lifecycle transition exists to end a project).
 - [ ] Reporting endpoints
 - [ ] **CRM Reports**

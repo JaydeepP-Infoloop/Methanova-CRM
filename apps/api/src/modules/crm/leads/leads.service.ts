@@ -42,6 +42,18 @@ function startOfToday(): Date {
 }
 
 /**
+ * "Due for revisit" — parked with a revisit date of today or earlier. The one
+ * definition behind both the `parkedDue` inbox filter and the
+ * `parkedDueForRevisit` count the Dashboard links to, so the two can't drift.
+ * A parked lead with no revisit date is shelved, never due.
+ */
+function parkedDueMatch(): Record<string, unknown> {
+  const tomorrow = startOfToday();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return { "parked.isParked": true, "parked.revisitDate": { $lt: tomorrow } };
+}
+
+/**
  * Each level must actually belong to the one above it. Without this a client
  * could pair a Kutch taluka with an Ahmedabad district and the record would
  * look plausible forever.
@@ -163,6 +175,8 @@ export function buildLeadFilter(query: ListLeadsQuery): Record<string, unknown> 
   if (query.noFirstResponse) filter.firstResponseAt = null;
   if (query.overdueNextAction) filter.nextActionDate = { $lt: startOfToday() };
   if (query.arrivedToday) filter.createdAt = { $gte: startOfToday() };
+  if (query.parked) filter["parked.isParked"] = true;
+  if (query.parkedDue) Object.assign(filter, parkedDueMatch());
 
   return filter;
 }
@@ -195,7 +209,7 @@ export async function listLeads(query: ListLeadsQuery) {
     const createdAt = new Date(row.createdAt as Date);
     const daysWaiting = Math.max(0, Math.floor((now - createdAt.getTime()) / DAY_MS));
     const stageSince = row.stageSince ? new Date(row.stageSince as Date) : createdAt;
-    const parked = row.parked as { isParked?: boolean } | null;
+    const parked = row.parked as { isParked?: boolean; revisitDate?: Date | null } | null;
     return {
       id: String(row._id),
       leadCode: row.leadCode,
@@ -219,6 +233,7 @@ export async function listLeads(query: ListLeadsQuery) {
       daysWaiting,
       daysInStage: Math.max(0, Math.floor((now - stageSince.getTime()) / DAY_MS)),
       isParked: Boolean(parked?.isParked),
+      parkedRevisitDate: parked?.isParked && parked.revisitDate ? new Date(parked.revisitDate).toISOString() : null,
       // A lead nobody has replied to past the threshold is the thing this
       // whole screen exists to make impossible to miss.
       slaBreached: row.firstResponseAt === null && daysWaiting >= config.leadFirstResponseSlaDays,
@@ -262,20 +277,14 @@ export async function getInboxSummary(query: ListLeadsQuery): Promise<LeadInboxS
     stage: { $nin: [LeadStage.WON, LeadStage.LOST] },
     deletedAt: null,
   };
-  const tomorrow = startOfToday();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const [unassigned, noFirstResponse, arrivedToday, open, parkedDueForRevisit, openValueAgg, valueAgg, oldest] =
+  const [unassigned, noFirstResponse, arrivedToday, open, parked, parkedDueForRevisit, openValueAgg, valueAgg, oldest] =
     await Promise.all([
       LeadModel.countDocuments({ ownerUserId: null, deletedAt: null }),
       LeadModel.countDocuments({ firstResponseAt: null, deletedAt: null }),
       LeadModel.countDocuments({ createdAt: { $gte: startOfToday() }, deletedAt: null }),
       LeadModel.countDocuments(openMatch),
-      LeadModel.countDocuments({
-        "parked.isParked": true,
-        "parked.revisitDate": { $lt: tomorrow },
-        deletedAt: null,
-      }),
+      LeadModel.countDocuments({ "parked.isParked": true, deletedAt: null }),
+      LeadModel.countDocuments({ ...parkedDueMatch(), deletedAt: null }),
       LeadModel.aggregate<{ total: number }>([
         { $match: openMatch },
         { $group: { _id: null, total: { $sum: { $ifNull: ["$indicativeValuePaise", 0] } } } },
@@ -297,6 +306,7 @@ export async function getInboxSummary(query: ListLeadsQuery): Promise<LeadInboxS
     arrivedToday,
     open,
     openIndicativeValueTotalPaise: openValueAgg[0]?.total ?? 0,
+    parked,
     parkedDueForRevisit,
     // Summing nulls as 0 is correct *for a total* — an unpriced lead adds
     // nothing. That is not the same as displaying it as ₹0, which the row

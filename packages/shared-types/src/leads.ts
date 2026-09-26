@@ -93,6 +93,8 @@ export interface LeadListItemDto {
   daysInStage: number;
   /** Orthogonal to `stage`; the board paints a parked pill rather than a fake stage. */
   isParked: boolean;
+  /** When a parked lead is due back; null when not parked or parked without a date. */
+  parkedRevisitDate: string | null;
   slaBreached: boolean;
 }
 
@@ -118,6 +120,8 @@ export interface LeadInboxSummaryDto {
    */
   open: number;
   openIndicativeValueTotalPaise: Paise;
+  /** Every parked lead, whole-collection — the inbox's "Parked" segment count. */
+  parked: number;
   /** Parked leads whose revisit date is today or earlier — due back, not merely shelved. */
   parkedDueForRevisit: number;
   /** Sum over the filtered set. Unpriced leads contribute nothing rather than being treated as zero-value. */

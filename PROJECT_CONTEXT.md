@@ -247,13 +247,13 @@ Every panel on `Dashboard.tsx` now reads real data — the Billing, Compliance a
   - Work packages: `?projectId`, `?delayed`, `?status`, `?id`, `?openProjects`
   - Licences: `?projectId`, `?overdue`, `?expiringSoon`, `?status`, `?id`, `?openProjects`
   - Invoices: `?projectId`, `?receivable`, `?overdue`, `?bucket` (including `none`), `?id`
-  - Leads: `?segment`, `?stage`
+  - Leads: `?segment` (`unassigned`, `noFirstResponse`, `arrivedToday`, `parked`, `parkedDue`), `?stage`
   - MOUs: `?status` (one status or a comma list; the dashboard's "in progress" link is `DRAFT,SENT`)
   - Quotations: `?status`, `?open` (every non-terminal status, the same rule as the Open Quotations KPI)
 
   On the MOU and Quotation pages the filter is also an on-page status select that writes the URL (`useUrlFilters().replace`), so no filter notice is needed there. An unknown status in the comma list returns 400 rather than a silently narrower list.
 
-  Still unfiltered: "Parked due for revisit" (the lead list has no parked filter).
+  Every dashboard count now lands on a filtered list. The Lead Inbox has two parked segments. "Parked" means every parked lead. "Due for revisit" means parked with a revisit date of today or earlier, which is the dashboard's "Parked due for revisit" card. Both the `parkedDue` list filter and the `parkedDueForRevisit` count read one `parkedDueMatch()` in `leads.service.ts`, so they can't drift. A parked lead with no revisit date is shelved, never due. Table rows show a "Parked · revisit <date>" pill.
 - **Quick actions** reuse the existing modals, each shown only with WRITE on its module. Two gaps were filled:
   - `LogActivityModal` shows a lead picker when opened without a lead.
   - `LogProgressModal` is new, because no progress-update create existed anywhere. It is also on the Progress Updates page, so it isn't a dashboard-only entry point.

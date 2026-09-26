@@ -44,7 +44,7 @@ const KANBAN_PAGE_SIZE = 100;
  * before. Stage and temperature stay in FilterBar: those genuinely combine
  * with any of these.
  */
-const SEGMENTS = ["all", "unassigned", "noFirstResponse", "arrivedToday"] as const;
+const SEGMENTS = ["all", "unassigned", "noFirstResponse", "arrivedToday", "parked", "parkedDue"] as const;
 type Segment = (typeof SEGMENTS)[number];
 
 /** Below this, a chart is noise rather than a signal — show the count instead. */
@@ -102,6 +102,8 @@ export function LeadPage() {
     unassigned: segment === "unassigned",
     noFirstResponse: segment === "noFirstResponse",
     arrivedToday: segment === "arrivedToday",
+    parked: segment === "parked",
+    parkedDue: segment === "parkedDue",
     sort: "oldest",
   };
 
@@ -133,6 +135,12 @@ export function LeadPage() {
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
               SLA
             </span>
+          )}
+          {row.isParked && (
+            <StatusPill
+              value={row.parkedRevisitDate ? `Parked · revisit ${formatDate(row.parkedRevisitDate)}` : "Parked"}
+              tone="waiting"
+            />
           )}
         </div>
       ),
@@ -300,6 +308,8 @@ export function LeadPage() {
             { value: "unassigned", label: "Unassigned", count: summary.data?.unassigned },
             { value: "noFirstResponse", label: "Awaiting first response", count: summary.data?.noFirstResponse },
             { value: "arrivedToday", label: "Arrived today", count: summary.data?.arrivedToday },
+            { value: "parked", label: "Parked", count: summary.data?.parked },
+            { value: "parkedDue", label: "Due for revisit", count: summary.data?.parkedDueForRevisit },
           ]}
         />
       </div>

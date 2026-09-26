@@ -23,6 +23,8 @@ export interface LeadListFilters {
   noFirstResponse?: boolean;
   overdueNextAction?: boolean;
   arrivedToday?: boolean;
+  parked?: boolean;
+  parkedDue?: boolean;
   sort?: string;
 }
 

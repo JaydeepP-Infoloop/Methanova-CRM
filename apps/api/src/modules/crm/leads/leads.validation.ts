@@ -253,6 +253,10 @@ export const listLeadsQuerySchema = z.object({
   overdueNextAction: booleanFlag,
   /** Leads created since midnight — the "what landed today" segment of the inbox. */
   arrivedToday: booleanFlag,
+  /** Every parked lead, whatever its revisit date. */
+  parked: booleanFlag,
+  /** Parked with a revisit date of today or earlier — the Dashboard's "Parked due for revisit". */
+  parkedDue: booleanFlag,
   /** Default is longest-waiting-first; the inbox exists to surface neglect. */
   sort: z.enum(["oldest", "newest", "nextActionDate", "companyName"]).default("oldest"),
 });

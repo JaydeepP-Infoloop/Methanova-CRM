@@ -454,7 +454,7 @@ export function Dashboard() {
             label="Parked due for revisit"
             value={stat(summary.data?.parkedDueForRevisit)}
             isLoading={summary.isLoading}
-            to="/app/crm/leads"
+            to="/app/crm/leads?segment=parkedDue"
           />
         </div>
       )}
