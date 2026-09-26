@@ -59,6 +59,13 @@ const columns: ResourceColumn<InvoiceRow>[] = [
     render: (row) => (row.outstandingPaise === undefined ? "—" : formatPaise(row.outstandingPaise)),
   },
   {
+    key: "retentionHeldPaise",
+    label: "Retention held",
+    align: "right",
+    sortable: true,
+    render: (row) => (row.retentionHeldPaise ? formatPaise(row.retentionHeldPaise) : "—"),
+  },
+  {
     key: "ageingBucket",
     label: "Ageing",
     render: (row) => (row.ageingBucket ? <StatusPill value={row.ageingBucket} /> : "—"),
@@ -75,12 +82,13 @@ const BUCKET_LABELS: Record<string, string> = {
 };
 
 export function InvoicePage() {
-  const url = useUrlFilters(["projectId", "receivable", "overdue", "bucket", "id"] as const);
+  const url = useUrlFilters(["projectId", "receivable", "retention", "overdue", "bucket", "id"] as const);
   const { data, isLoading, error } = invoicesApi.useList(url.filters);
   const [search, setSearch] = useState("");
   const rows = filterRows(data ?? [], search, ["number", "kind", "status", "clientName"]);
   const filterLabels = [
     ...(url.filters.receivable ? ["Outstanding, largest first"] : []),
+    ...(url.filters.retention ? ["Retention still held (not aged, not overdue)"] : []),
     ...(url.filters.overdue ? ["Past due and still owed"] : []),
     ...(url.filters.bucket ? [BUCKET_LABELS[url.filters.bucket] ?? url.filters.bucket] : []),
     ...(url.filters.id ? ["One invoice"] : []),

@@ -131,6 +131,19 @@ Companion docs: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for what the system d
   - **Verified live:** 47 API checks on a four-project test dataset, plus browser click-through.
   - **MOU and Quotation pages** have a server-side status filter driven by the URL (`?status=`, comma list allowed; quotations also `?open=1`). The Signed MOUs, MOUs in progress and Open quotations links land on it, and each list's count matches its dashboard figure.
   - **Lead Inbox parked segments:** "Parked" (all) and "Due for revisit" (revisit date today or earlier), backed by server-side `parked`/`parkedDue` filters and whole-collection counts. The dashboard's "Parked due for revisit" card lands on the latter. Every dashboard count now opens a filtered list.
+- [x] **Dashboard redesign, KPI phase — done.** Full rationale is in PROJECT_CONTEXT.md, "dashboard redesign, KPI phase".
+  - **Role-aware KPI row** driven by `KPI_ROW_BY_ROLE` (card definitions per role, each gated by its own module).
+    - Director: Active projects (count and contract value), Open pipeline value, Outstanding receivables (net of retention, with retention named apart), Signed MOUs this financial year (by the new `Mou.signedAt`, from 1 April IST).
+    - Sales Head/BDE: the original five lead cards, rendering byte-identically to before.
+    - Project Manager and Accounts: that same default row until they get their own.
+  - **Outstanding receivables exclude retention**, per the SoW: collectible part less receipts. Retention held is its own figure, card and `?retention=1` filter, and never ages or goes overdue.
+  - **Compliance overdue / expiring-soon counts** had already landed in Phase 3. The window is each licence's `renewalLeadDays`, else the 60-day master-data default.
+  - **Project Health gains a Current work package column:** the earliest-`plannedStart` package that is still open and under 100%, else "No schedule yet" or "All complete".
+  - **Fixed:** the dashboard no longer 403s on `/api/schedule/work-packages` for roles without schedule access.
+- [ ] **Still open for later dashboard phases:**
+  - Active Projects health-pill styling. This is visual only; the reasons and data exist.
+  - The Pending Approvals widget. It depends on the Director-approval-threshold gate, which today only *refuses* an above-threshold `signMou()` with a 403. There is no pending-approval record or queue to list yet, so the widget needs that approval flow first.
+  - Project Manager, Accounts and Liaison-specific KPI row variants. Each is one new `KPI_ROW_BY_ROLE` entry, with no re-architecture.
 - [ ] **Deferred — separate P2/P3 scope per the SoW, not unfinished dashboard work:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures, client-portal data (and a client-scoped dashboard), offline site capture, and a TERMINATED project state (no lifecycle transition exists to end a project).
 - [ ] Reporting endpoints
 - [ ] **CRM Reports**

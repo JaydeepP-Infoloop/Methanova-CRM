@@ -103,6 +103,10 @@ export interface ProjectRiskReasonDto {
 /** Counts per SoW portfolio status. `count` is null for TERMINATED — no lifecycle state maps to it yet, so nothing was counted. */
 export interface DashboardPortfolioDto {
   byStatus: { status: ProjectPortfolioStatus; count: number | null }[];
+  /** Summed `contractValuePaise` over Active-portfolio projects (ACTIVE + COMMISSIONING). */
+  activeContractValuePaise: Paise;
+  /** Active projects with no recorded contract value — counted, so the total never silently understates. */
+  activeWithoutValueCount: number;
   openCount: number;
   atRiskCount: number;
   onTrackCount: number;
@@ -117,6 +121,19 @@ export interface DashboardProjectHealthRowDto {
   portfolioStatus: ProjectPortfolioStatus;
   /** `weightedProgressPct()` — null when the project has no work packages yet. */
   progressPct: number | null;
+  /**
+   * Earliest-`plannedStart` package not yet COMPLETED/HANDED_OVER and under
+   * 100%. Null either because there is no schedule yet (`progressPct` is then
+   * null too) or because every package is done — the UI tells the two apart.
+   */
+  currentWorkPackage: {
+    id: string;
+    name: string;
+    status: string;
+    plannedStart: string | null;
+    plannedEnd: string | null;
+    percentComplete: number;
+  } | null;
   targetCommissioningDate: string | null;
   revisedTargetDate: string | null;
   reasons: ProjectRiskReasonDto[];
@@ -172,8 +189,15 @@ export interface DashboardOutstandingInvoiceDto {
   ageingBucket: AgeingBucket | null;
 }
 
-/** Open receivables only: invoice total less its live receipts, where that is still above zero. */
+/**
+ * Open receivables only. Outstanding = the collectible part of each invoice
+ * (total less retention) less its live receipts, where still above zero.
+ * Retention is never in `totalOutstandingPaise`, the buckets or overdue — it
+ * is reported apart in `retentionHeld`, per the SoW.
+ */
 export interface DashboardReceivablesDto {
+  /** Retention still withheld across open receivables (reduced only by receipts beyond the collectible part). */
+  retentionHeld: { count: number; paise: Paise };
   /** Every `AgeingBucket`, always present even at 0. */
   buckets: DashboardReceivableBucketDto[];
   /** Outstanding but with no `dueDate` — can't be aged, so counted apart rather than called CURRENT. */
@@ -196,6 +220,16 @@ export interface DashboardCriticalAlertDto {
   outstandingPaise?: Paise;
 }
 
+/** SIGNED MOUs by `signedAt` since the start of the current Indian financial year (1 April, IST). */
+export interface DashboardSignedMousDto {
+  /** e.g. "FY 2026–27". */
+  periodLabel: string;
+  /** ISO instant of 1 April 00:00 IST — also the `?signedFrom=` the KPI links with. */
+  periodStart: string;
+  count: number;
+  contractValuePaise: Paise;
+}
+
 /**
  * Every section is computed server-side only for a caller whose role can
  * read its module; otherwise it comes back `null` (or `[]`), never faked.
@@ -203,6 +237,7 @@ export interface DashboardCriticalAlertDto {
 export interface DashboardDto {
   pipeline: DashboardPipelineStageDto[];
   mou: DashboardMouStatusDto[];
+  signedMous: DashboardSignedMousDto | null;
   quotations: DashboardQuotationsSummaryDto | null;
   /** Newest first, capped server-side — the same flat cross-lead query the Activity Log page uses, not a second implementation. */
   recentActivity: ActivityListItemDto[];

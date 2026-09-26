@@ -45,9 +45,24 @@ export const MOU_APPROVAL_SETTINGS_KEY = "mou-approval-settings";
 /** ₹1 crore — a starting default pending the actual SoW figure; edit it from the admin screen, not here. */
 export const DEFAULT_MOU_APPROVAL_THRESHOLD_PAISE = 1_000_000_000;
 
-export async function listMous(filters: { status?: string[] } = {}) {
-  const query = filters.status ? { status: { $in: filters.status } } : {};
+export async function listMous(filters: { status?: string[]; signedFrom?: Date } = {}) {
+  const query: Record<string, unknown> = {};
+  if (filters.status) query.status = { $in: filters.status };
+  if (filters.signedFrom) query.signedAt = { $gte: filters.signedFrom };
   return MouModel.find(query).sort({ createdAt: -1 }).limit(100);
+}
+
+/**
+ * SIGNED MOUs whose `signedAt` falls on or after `since` — the Director KPI's
+ * "Signed MOUs this financial year". A count and summed contract value from
+ * one `$group`; the `?status=SIGNED&signedFrom=` list lands on the same set.
+ */
+export async function getSignedMousSince(since: Date): Promise<{ count: number; contractValuePaise: number }> {
+  const [row] = await MouModel.aggregate<{ count: number; contractValuePaise: number }>([
+    { $match: { status: MouStatus.SIGNED, signedAt: { $gte: since }, deletedAt: null } },
+    { $group: { _id: null, count: { $sum: 1 }, contractValuePaise: { $sum: { $ifNull: ["$contractValuePaise", 0] } } } },
+  ]);
+  return { count: row?.count ?? 0, contractValuePaise: row?.contractValuePaise ?? 0 };
 }
 
 /**
@@ -312,6 +327,7 @@ export async function signMou(id: string, actorId?: string, actorRole?: Role) {
       );
 
       mou.set("status", MouStatus.SIGNED);
+      mou.set("signedAt", new Date());
       mou.set("projectId", project._id);
       applyActor(mou, actorId, "mou_signed");
       signed = await mou.save({ session });

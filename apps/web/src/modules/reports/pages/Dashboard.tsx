@@ -3,6 +3,7 @@ import {
   AppModule,
   AgeingBucket,
   canAccess,
+  LeadStage,
   LicenceStatus,
   MouStatus,
   ProjectPortfolioStatus,
@@ -32,6 +33,7 @@ import {
   ShieldAlert,
   UserX,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -188,6 +190,29 @@ const healthColumns: ResourceColumn<HealthRow>[] = [
     render: (row) => (row.progressPct === null ? NOT_AVAILABLE : `${row.progressPct}%`),
   },
   {
+    key: "currentWorkPackage",
+    label: "Current work package",
+    render: (row) =>
+      row.currentWorkPackage ? (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Link
+            to={`/app/schedule/work-packages?id=${row.currentWorkPackage.id}`}
+            className="text-sm text-slate-800 hover:underline"
+          >
+            {row.currentWorkPackage.name}
+          </Link>
+          <p className="text-xs tabular-nums text-slate-500">
+            {row.currentWorkPackage.percentComplete}% ·{" "}
+            {row.currentWorkPackage.plannedEnd ? `due ${formatDate(row.currentWorkPackage.plannedEnd)}` : "no planned end"}
+          </p>
+        </div>
+      ) : row.progressPct === null ? (
+        "No schedule yet"
+      ) : (
+        "All complete"
+      ),
+  },
+  {
     key: "targetCommissioningDate",
     label: "Target commissioning",
     sortable: true,
@@ -297,6 +322,176 @@ function monthLabel(key: string): string {
 
 type QuickAction = "lead" | "activity" | "quotation" | "mou" | "progress" | null;
 
+/** Everything a KPI card may read. Each card picks its own figure; none is computed in the row itself. */
+interface KpiContext {
+  summary: ReturnType<typeof useLeadSummary>;
+  myDay: ReturnType<typeof useMyDay>;
+  dashboard: ReturnType<typeof useDashboard>;
+}
+
+/** One KPI card, declared as data. `module` gates it with the same `canAccess(role, module, READ)` as the rest of the page. */
+interface KpiCardDef {
+  key: string;
+  module: AppModule;
+  icon: LucideIcon;
+  label: (ctx: KpiContext) => string;
+  value: (ctx: KpiContext) => string;
+  isLoading: (ctx: KpiContext) => boolean;
+  to: (ctx: KpiContext) => string | undefined;
+}
+
+interface KpiRowDef {
+  gridClass: string;
+  busy: (ctx: KpiContext) => boolean;
+  cards: KpiCardDef[];
+}
+
+const stat = (value: number | undefined) => (value === undefined ? "—" : String(value));
+
+/** The original lead-inbox strip, unchanged — Sales Head/BDE's row, and the default until a role gets its own. */
+const LEAD_KPI_ROW: KpiRowDef = {
+  gridClass: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5",
+  busy: ({ summary, myDay }) => summary.isLoading || myDay.isLoading,
+  cards: [
+    {
+      key: "openLeads",
+      module: AppModule.crm,
+      icon: Users,
+      label: ({ summary }) =>
+        summary.data ? `Open leads · ${formatPaiseAsCrore(summary.data.openIndicativeValueTotalPaise)}` : "Open leads",
+      value: ({ summary }) => stat(summary.data?.open),
+      isLoading: ({ summary }) => summary.isLoading,
+      to: () => "/app/crm/leads",
+    },
+    {
+      key: "unassigned",
+      module: AppModule.crm,
+      icon: UserX,
+      label: () => "Unassigned",
+      value: ({ summary }) => stat(summary.data?.unassigned),
+      isLoading: ({ summary }) => summary.isLoading,
+      to: () => "/app/crm/leads?segment=unassigned",
+    },
+    {
+      key: "noFirstResponse",
+      module: AppModule.crm,
+      icon: MailQuestion,
+      label: () => "Awaiting first response",
+      value: ({ summary }) => stat(summary.data?.noFirstResponse),
+      isLoading: ({ summary }) => summary.isLoading,
+      to: () => "/app/crm/leads?segment=noFirstResponse",
+    },
+    {
+      key: "overdueCommitments",
+      module: AppModule.crm,
+      icon: AlertTriangle,
+      label: () => "Overdue commitments",
+      value: ({ myDay }) => stat(myDay.data?.overdue.count),
+      isLoading: ({ myDay }) => myDay.isLoading,
+      to: () => "/app/my-day",
+    },
+    {
+      key: "parkedDue",
+      module: AppModule.crm,
+      icon: PauseCircle,
+      label: () => "Parked due for revisit",
+      value: ({ summary }) => stat(summary.data?.parkedDueForRevisit),
+      isLoading: ({ summary }) => summary.isLoading,
+      to: () => "/app/crm/leads?segment=parkedDue",
+    },
+  ],
+};
+
+const OPEN_LEAD_STAGES = new Set<string>([LeadStage.ENQUIRY, LeadStage.QUALIFICATION, LeadStage.SITE_VISIT, LeadStage.QUOTATION, LeadStage.NEGOTIATION, LeadStage.MOU]);
+
+/** Director/Management: the business in four numbers — delivery, pipeline, cash, and new commitments this financial year. */
+const DIRECTOR_KPI_ROW: KpiRowDef = {
+  gridClass: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
+  busy: ({ dashboard }) => dashboard.isLoading,
+  cards: [
+    {
+      key: "activeProjects",
+      module: AppModule.projects,
+      icon: FolderKanban,
+      label: ({ dashboard }) => {
+        const portfolio = dashboard.data?.projectHealth?.portfolio;
+        if (!portfolio) return "Active projects";
+        const unvalued = portfolio.activeWithoutValueCount > 0 ? ` (${portfolio.activeWithoutValueCount} without a value)` : "";
+        return `Active projects · ${formatPaiseAsCrore(portfolio.activeContractValuePaise)}${unvalued}`;
+      },
+      value: ({ dashboard }) =>
+        stat(dashboard.data?.projectHealth?.portfolio.byStatus.find((row) => row.status === ProjectPortfolioStatus.ACTIVE)?.count ?? undefined),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => `/app/projects?portfolio=${ProjectPortfolioStatus.ACTIVE}`,
+    },
+    {
+      key: "openPipeline",
+      module: AppModule.crm,
+      icon: Users,
+      label: ({ dashboard }) => {
+        const open = (dashboard.data?.pipeline ?? []).filter((row) => OPEN_LEAD_STAGES.has(row.stage));
+        return dashboard.data ? `Open pipeline · ${plural(open.reduce((sum, row) => sum + row.count, 0), "lead")}` : "Open pipeline";
+      },
+      value: ({ dashboard }) =>
+        dashboard.data
+          ? formatPaiseAsCrore(
+              dashboard.data.pipeline
+                .filter((row) => OPEN_LEAD_STAGES.has(row.stage))
+                .reduce((sum, row) => sum + row.indicativeValueTotalPaise, 0),
+            )
+          : "—",
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/crm/leads",
+    },
+    {
+      key: "outstandingReceivables",
+      module: AppModule.receivables,
+      icon: CircleDollarSign,
+      label: ({ dashboard }) => {
+        const receivables = dashboard.data?.receivables;
+        if (!receivables) return "Outstanding receivables";
+        const retention =
+          // Exact rupees, not crore: retention is often well under ₹1 Cr and would round to "₹0.00 Cr".
+          receivables.retentionHeld.paise > 0 ? ` · ${formatPaise(receivables.retentionHeld.paise)} retention held apart` : "";
+        return `Outstanding receivables · ${plural(receivables.openCount, "invoice")}${retention}`;
+      },
+      value: ({ dashboard }) =>
+        dashboard.data?.receivables ? formatPaiseAsCrore(dashboard.data.receivables.totalOutstandingPaise) : "—",
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/billing/invoices?receivable=1",
+    },
+    {
+      key: "signedMous",
+      module: AppModule.crm,
+      icon: BadgeCheck,
+      label: ({ dashboard }) => {
+        const signed = dashboard.data?.signedMous;
+        return signed
+          ? `Signed MOUs · ${signed.periodLabel} · ${formatPaiseAsCrore(signed.contractValuePaise)}`
+          : "Signed MOUs this financial year";
+      },
+      value: ({ dashboard }) => stat(dashboard.data?.signedMous?.count),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: ({ dashboard }) => {
+        const signed = dashboard.data?.signedMous;
+        return signed
+          ? `/app/crm/mou?status=${MouStatus.SIGNED}&signedFrom=${encodeURIComponent(signed.periodStart)}`
+          : `/app/crm/mou?status=${MouStatus.SIGNED}`;
+      },
+    },
+  ],
+};
+
+/**
+ * The KPI row per role. Add a Project Manager, Accounts or Liaison entry here
+ * to give that role its own row — nothing else changes. A role without an
+ * entry gets the lead strip, filtered like every card by its own module.
+ */
+const KPI_ROW_BY_ROLE: Partial<Record<Role, KpiRowDef>> = {
+  [Role.DIRECTOR]: DIRECTOR_KPI_ROW,
+  [Role.SALES_HEAD_BDE]: LEAD_KPI_ROW,
+};
+
 export function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -327,7 +522,9 @@ export function Dashboard() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.resource(RESOURCE.dashboard) });
   };
 
-  const stat = (value: number | undefined) => (value === undefined ? "—" : String(value));
+  const kpiContext: KpiContext = { summary, myDay, dashboard };
+  const kpiRow = (user && KPI_ROW_BY_ROLE[user.role]) ?? LEAD_KPI_ROW;
+  const kpiCards = kpiRow.cards.filter((card) => can(card.module));
   const data = dashboard.data;
   const loading = dashboard.isLoading;
 
@@ -415,47 +612,18 @@ export function Dashboard() {
         </Card>
       )}
 
-      {canReadCrm && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5" aria-busy={summary.isLoading || myDay.isLoading}>
-          <StatCard
-            icon={Users}
-            label={
-              summary.data
-                ? `Open leads · ${formatPaiseAsCrore(summary.data.openIndicativeValueTotalPaise)}`
-                : "Open leads"
-            }
-            value={stat(summary.data?.open)}
-            isLoading={summary.isLoading}
-            to="/app/crm/leads"
-          />
-          <StatCard
-            icon={UserX}
-            label="Unassigned"
-            value={stat(summary.data?.unassigned)}
-            isLoading={summary.isLoading}
-            to="/app/crm/leads?segment=unassigned"
-          />
-          <StatCard
-            icon={MailQuestion}
-            label="Awaiting first response"
-            value={stat(summary.data?.noFirstResponse)}
-            isLoading={summary.isLoading}
-            to="/app/crm/leads?segment=noFirstResponse"
-          />
-          <StatCard
-            icon={AlertTriangle}
-            label="Overdue commitments"
-            value={stat(myDay.data?.overdue.count)}
-            isLoading={myDay.isLoading}
-            to="/app/my-day"
-          />
-          <StatCard
-            icon={PauseCircle}
-            label="Parked due for revisit"
-            value={stat(summary.data?.parkedDueForRevisit)}
-            isLoading={summary.isLoading}
-            to="/app/crm/leads?segment=parkedDue"
-          />
+      {kpiCards.length > 0 && (
+        <div className={kpiRow.gridClass} aria-busy={kpiRow.busy(kpiContext)}>
+          {kpiCards.map((card) => (
+            <StatCard
+              key={card.key}
+              icon={card.icon}
+              label={card.label(kpiContext)}
+              value={card.value(kpiContext)}
+              isLoading={card.isLoading(kpiContext)}
+              to={card.to(kpiContext)}
+            />
+          ))}
         </div>
       )}
 
@@ -651,6 +819,12 @@ export function Dashboard() {
                 value={String(receivables.noDueDate.count)}
                 to="/app/billing/invoices?bucket=none"
               />
+              <StatCard
+                icon={Hourglass}
+                label={`Retention held · ${formatPaise(receivables.retentionHeld.paise)} · not aged`}
+                value={String(receivables.retentionHeld.count)}
+                to="/app/billing/invoices?retention=1"
+              />
             </div>
           )}
         </Card>
@@ -779,7 +953,9 @@ export function Dashboard() {
       <LogActivityModal open={quickAction === "activity"} onClose={closeQuickAction} />
       <CreateQuotationModal open={quickAction === "quotation"} onClose={closeQuickAction} />
       <CreateMouModal open={quickAction === "mou"} onClose={closeQuickAction} />
-      <LogProgressModal open={quickAction === "progress"} onClose={closeQuickAction} />
+      {/* Mounted only while open: it loads the work-package list, which a role
+          without schedule access would otherwise fetch (and 403 on) every visit. */}
+      {quickAction === "progress" && <LogProgressModal open onClose={closeQuickAction} />}
     </div>
   );
 }

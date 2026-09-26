@@ -102,6 +102,54 @@ export async function getProgressByProject(projectIds: unknown[]): Promise<Map<s
   return new Map(projectIds.map((id) => [String(id), byId.get(String(id)) ?? null]));
 }
 
+export interface CurrentWorkPackage {
+  id: string;
+  name: string;
+  status: string;
+  plannedStart: Date | null;
+  plannedEnd: Date | null;
+  percentComplete: number;
+}
+
+/**
+ * Each project's *current* work package: the one with the earliest
+ * `plannedStart` that is not COMPLETED/HANDED_OVER and has `percentComplete`
+ * under 100. A package with no `plannedStart` sorts after every dated one
+ * (Mongo would otherwise put nulls first), then `sequence` breaks ties. One
+ * `$group` for all projects at once; a project with no open package is
+ * simply absent from the map.
+ */
+export async function getCurrentWorkPackages(projectIds: unknown[]): Promise<Map<string, CurrentWorkPackage>> {
+  const rows = await TheModel.aggregate<{ _id: unknown; wp: CurrentWorkPackage & { _id: unknown } }>([
+    {
+      $match: {
+        projectId: { $in: toObjectIds(projectIds) },
+        deletedAt: null,
+        status: { $nin: [...TERMINAL_WORK_PACKAGE_STATUSES] },
+        $or: [{ percentComplete: { $lt: 100 } }, { percentComplete: null }],
+      },
+    },
+    { $addFields: { startSort: { $ifNull: ["$plannedStart", new Date("9999-12-31T00:00:00Z")] } } },
+    { $sort: { startSort: 1, sequence: 1, _id: 1 } },
+    {
+      $group: {
+        _id: "$projectId",
+        wp: {
+          $first: {
+            _id: "$_id",
+            name: "$name",
+            status: "$status",
+            plannedStart: { $ifNull: ["$plannedStart", null] },
+            plannedEnd: { $ifNull: ["$plannedEnd", null] },
+            percentComplete: { $ifNull: ["$percentComplete", 0] },
+          },
+        },
+      },
+    },
+  ]);
+  return new Map(rows.map((row) => [String(row._id), { ...row.wp, id: String(row.wp._id) }]));
+}
+
 export interface DelayedWorkPackagesSummary {
   totalCount: number;
   rows: {

@@ -1,12 +1,14 @@
 import { GstPlaceOfSupply, InvoiceKind } from "@methanova/shared-types";
 import { z } from "zod";
-import { listFilterFields } from "../../../utils/query.js";
+import { flagParam, listFilterFields } from "../../../utils/query.js";
 
 /** `bucket` is an `AgeingBucket` value, or `none` for outstanding invoices with no due date. */
 export const listInvoicesQuerySchema = z.object({
   id: listFilterFields.id,
   projectId: listFilterFields.projectId,
   receivable: listFilterFields.receivable,
+  /** Open receivables still holding retention — the Receivables Ageing "Retention held" card. */
+  retention: flagParam.optional(),
   overdue: listFilterFields.overdue,
   bucket: z.enum(["CURRENT", "0-30", "31-60", "61-90", "90+", "none"]).optional(),
 });

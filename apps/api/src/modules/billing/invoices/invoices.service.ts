@@ -22,14 +22,25 @@ function counterForKind(kind: string): CounterKey {
 }
 
 /**
- * Appends `receivedPaise` (live receipts), `outstandingPaise` (total less
- * those), `daysPastDue` and `ageingBucket` — the Mongo form of
+ * Appends `receivedPaise` (live receipts), `outstandingPaise`,
+ * `retentionHeldPaise`, `daysPastDue` and `ageingBucket` — the Mongo form of
  * `invoiceAgeing()` (derived.ts), which the two must stay in step with.
  * Receipts never move an invoice's status, so "still owed" can only be read
  * off the receipts themselves.
+ *
+ * Retention (SoW: "retention held shown separately and excluded from
+ * overdue"): `retentionPaise` is the part of `totalPaise` the client withholds
+ * until release, so only `totalPaise − retentionPaise` is collectible now.
+ * Receipts are applied to that collectible part first; anything received
+ * beyond it releases retention.
+ *   outstanding    = max(0, collectible − received)
+ *   retentionHeld  = max(0, retention − max(0, received − collectible))
+ * Only `outstandingPaise` ages, goes overdue, or counts as a receivable.
  */
 function outstandingStages(now: Date) {
   const days = "$daysPastDue";
+  const retention = { $ifNull: ["$retentionPaise", 0] };
+  const collectible = { $max: [0, { $subtract: [{ $ifNull: ["$totalPaise", 0] }, retention] }] };
   return [
     {
       $lookup: {
@@ -45,7 +56,10 @@ function outstandingStages(now: Date) {
     { $addFields: { receivedPaise: { $ifNull: [{ $first: "$received.total" }, 0] } } },
     {
       $addFields: {
-        outstandingPaise: { $subtract: [{ $ifNull: ["$totalPaise", 0] }, "$receivedPaise"] },
+        outstandingPaise: { $max: [0, { $subtract: [collectible, "$receivedPaise"] }] },
+        retentionHeldPaise: {
+          $max: [0, { $subtract: [retention, { $max: [0, { $subtract: ["$receivedPaise", collectible] }] }] }],
+        },
         daysPastDue: { $cond: [{ $ifNull: ["$dueDate", false] }, wholeDaysExpr("$dueDate", now), null] },
         isOpenReceivable: { $in: ["$status", [...INVOICE_RECEIVABLE_STATUSES]] },
       },
@@ -85,7 +99,7 @@ const LIVE_PROJECT_STAGES = [
   { $match: { "project.deletedAt": null } },
 ];
 
-/** Stored fields plus `outstandingPaise` and the read-time `isOverdue`/`daysOverdue`/`ageingBucket` — never stored. */
+/** Stored fields plus `outstandingPaise`/`retentionHeldPaise` and the read-time `isOverdue`/`daysOverdue`/`ageingBucket` — never stored. */
 function toInvoiceView(row: Record<string, unknown>, now: Date) {
   const { isOpenReceivable: _r, daysPastDue: _d, ageingBucket: _b, ...plain } = row;
   const ageing = invoiceAgeing(
@@ -106,7 +120,7 @@ async function clientNameForProject(projectId: unknown): Promise<string> {
 }
 
 export async function listInvoices(
-  filters: { id?: string; projectId?: string; receivable?: boolean; overdue?: boolean; bucket?: string } = {},
+  filters: { id?: string; projectId?: string; receivable?: boolean; overdue?: boolean; bucket?: string; retention?: boolean } = {},
 ) {
   const now = new Date();
   const base: Record<string, unknown> = { deletedAt: null };
@@ -114,11 +128,12 @@ export async function listInvoices(
   if (filters.projectId) base.projectId = toObjectIds([filters.projectId])[0];
   const after: Record<string, unknown>[] = [];
   if (filters.receivable) after.push(OUTSTANDING);
+  if (filters.retention) after.push({ isOpenReceivable: true, retentionHeldPaise: { $gt: 0 } });
   if (filters.overdue) after.push(OUTSTANDING, { daysPastDue: { $gte: 1 } });
   if (filters.bucket) {
     after.push(OUTSTANDING, filters.bucket === "none" ? { daysPastDue: null } : { ageingBucket: filters.bucket });
   }
-  const sorted = filters.receivable || filters.overdue || filters.bucket;
+  const sorted = filters.receivable || filters.overdue || filters.bucket || filters.retention;
   const rows = await InvoiceModel.aggregate<Record<string, unknown>>([
     { $match: base },
     ...outstandingStages(now),
@@ -173,6 +188,7 @@ const AGEING_BUCKET_ORDER: AgeingBucket[] = [
 /** Receivables Ageing, Top Outstanding, and the overdue roll-up the risk reasons and critical alerts are built from — one `$facet`. */
 export async function getReceivablesSummary(now: Date, topLimit: number, overdueLimit: number): Promise<ReceivablesSummary> {
   const [result] = await InvoiceModel.aggregate<{
+    retention: { count: number; held: number }[];
     buckets: { _id: AgeingBucket; count: number; outstanding: number }[];
     noDueDate: { count: number; outstanding: number }[];
     totals: { count: number; outstanding: number }[];
@@ -192,20 +208,28 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
   }>([
     { $match: { deletedAt: null, status: { $in: [...INVOICE_RECEIVABLE_STATUSES] } } },
     ...outstandingStages(now),
-    { $match: OUTSTANDING },
     ...LIVE_PROJECT_STAGES,
     {
       $facet: {
+        // Over every open receivable, not just those with collectible money
+        // left: an invoice paid down to its retention still holds retention.
+        retention: [
+          { $match: { retentionHeldPaise: { $gt: 0 } } },
+          { $group: { _id: null, count: { $sum: 1 }, held: { $sum: "$retentionHeldPaise" } } },
+        ],
         buckets: [
+          { $match: OUTSTANDING },
           { $match: { ageingBucket: { $ne: null } } },
           { $group: { _id: "$ageingBucket", count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } },
         ],
         noDueDate: [
+          { $match: OUTSTANDING },
           { $match: { daysPastDue: null } },
           { $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } },
         ],
-        totals: [{ $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } }],
+        totals: [{ $match: OUTSTANDING }, { $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } }],
         top: [
+          { $match: OUTSTANDING },
           { $sort: { outstandingPaise: -1, createdAt: 1 } },
           { $limit: topLimit },
           {
@@ -222,6 +246,7 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
           },
         ],
         overdueByProject: [
+          { $match: OUTSTANDING },
           { $match: { daysPastDue: { $gte: 1 } } },
           { $sort: { daysPastDue: -1, outstandingPaise: -1 } },
           {
@@ -236,6 +261,7 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
           },
         ],
         overdueTop: [
+          { $match: OUTSTANDING },
           { $match: { daysPastDue: { $gte: 1 } } },
           { $sort: { daysPastDue: -1, outstandingPaise: -1 } },
           { $limit: overdueLimit },
@@ -279,6 +305,10 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
       },
       openCount: result?.totals[0]?.count ?? 0,
       totalOutstandingPaise: result?.totals[0]?.outstanding ?? 0,
+      retentionHeld: {
+        count: result?.retention[0]?.count ?? 0,
+        paise: result?.retention[0]?.held ?? 0,
+      },
       top,
     },
     overdueByProject: result?.overdueByProject ?? [],

@@ -17,12 +17,13 @@ import { getComplianceHealth, getLicenceExpiryWindowDays } from "../../complianc
 import { getPortfolioCounts, listOpenProjects } from "../../projects/project/project.service.js";
 import { getMonthlyReceiptTotals } from "../../receivables/receipts/receipts.service.js";
 import {
+  getCurrentWorkPackages,
   getDelayedWorkPackagesSummary,
   getProgressByProject,
 } from "../../schedule/work-packages/work-packages.service.js";
 import { listActivities } from "../activities/activities.service.js";
 import { getPipelineByStage } from "../leads/leads.service.js";
-import { getMouSummaryByStatus } from "../mou/mou.service.js";
+import { getMouSummaryByStatus, getSignedMousSince } from "../mou/mou.service.js";
 import { getOpenQuotationsSummary } from "../quotations/quotations.service.js";
 
 /** "The last 10-15 across all leads" from the brief — a compact card, not the full Activity Log experience. */
@@ -51,6 +52,19 @@ function trailingMonths(count: number): { keys: string[]; since: Date } {
   }
   const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (count - 1), 1));
   return { keys, since };
+}
+
+/** IST is UTC+5:30 with no DST — the Indian financial year runs 1 April to 31 March in that zone, whatever the server's own TZ. */
+const IST_OFFSET_MS = 330 * 60 * 1000;
+
+/** The current Indian financial year: its start (1 April 00:00 IST, as a UTC instant) and a label like "FY 2026–27". */
+function currentFinancialYear(now: Date): { start: Date; label: string } {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  const startYear = ist.getUTCMonth() >= 3 ? ist.getUTCFullYear() : ist.getUTCFullYear() - 1;
+  return {
+    start: new Date(Date.UTC(startYear, 3, 1) - IST_OFFSET_MS),
+    label: `FY ${startYear}–${String((startYear + 1) % 100).padStart(2, "0")}`,
+  };
 }
 
 function access(role: Role) {
@@ -190,10 +204,13 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
   const now = new Date();
   const { keys: months, since } = trailingMonths(BILLING_TRAILING_MONTHS);
 
-  const [pipeline, mou, quotations, activityPage, invoicedByMonth, collectedByMonth, risk, portfolio] =
+  const fy = currentFinancialYear(now);
+
+  const [pipeline, mou, signed, quotations, activityPage, invoicedByMonth, collectedByMonth, risk, portfolio] =
     await Promise.all([
       can.crm ? getPipelineByStage() : Promise.resolve([]),
       can.crm ? getMouSummaryByStatus() : Promise.resolve([]),
+      can.crm ? getSignedMousSince(fy.start) : Promise.resolve(null),
       can.crm ? getOpenQuotationsSummary() : Promise.resolve(null),
       can.crm
         ? listActivities({ page: 1, pageSize: RECENT_ACTIVITY_LIMIT, hasFollowUp: false, overdueFollowUp: false })
@@ -214,8 +231,14 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
 
   let projectHealth: DashboardDto["projectHealth"] = null;
   if (can.projects && portfolio) {
-    const progress = await getProgressByProject(risk.openProjects.map((project) => project._id));
-    const rows: DashboardProjectHealthRowDto[] = risk.openProjects.map((project) => ({
+    const openIds = risk.openProjects.map((project) => project._id);
+    const [progress, currentWorkPackages] = await Promise.all([
+      getProgressByProject(openIds),
+      getCurrentWorkPackages(openIds),
+    ]);
+    const rows: DashboardProjectHealthRowDto[] = risk.openProjects.map((project) => {
+      const current = currentWorkPackages.get(String(project._id));
+      return {
       id: String(project._id),
       code: project.code,
       client: project.name,
@@ -223,10 +246,21 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
       lifecycleStatus: project.status,
       portfolioStatus: PROJECT_PORTFOLIO_STATUS_OF[project.status],
       progressPct: progress.get(String(project._id)) ?? null,
+      currentWorkPackage: current
+        ? {
+            id: current.id,
+            name: current.name,
+            status: current.status,
+            plannedStart: current.plannedStart ? new Date(current.plannedStart).toISOString() : null,
+            plannedEnd: current.plannedEnd ? new Date(current.plannedEnd).toISOString() : null,
+            percentComplete: current.percentComplete,
+          }
+        : null,
       targetCommissioningDate: project.targetCommissioningDate ? project.targetCommissioningDate.toISOString() : null,
       revisedTargetDate: project.revisedTargetDate ? project.revisedTargetDate.toISOString() : null,
       reasons: risk.reasons.get(String(project._id)) ?? [],
-    }));
+      };
+    });
     const atRiskCount = rows.filter((row) => row.reasons.length > 0).length;
     projectHealth = {
       portfolio: { ...portfolio, atRiskCount, onTrackCount: portfolio.openCount - atRiskCount },
@@ -240,6 +274,9 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
   return {
     pipeline,
     mou,
+    signedMous: signed
+      ? { periodLabel: fy.label, periodStart: fy.start.toISOString(), count: signed.count, contractValuePaise: signed.contractValuePaise }
+      : null,
     quotations,
     recentActivity: activityPage.items,
     billing,

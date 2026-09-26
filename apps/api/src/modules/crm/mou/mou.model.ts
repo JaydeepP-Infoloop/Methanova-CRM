@@ -31,6 +31,8 @@ const schema = new Schema(
      */
     supersedesMouId: { type: Schema.Types.ObjectId, ref: "Mou", default: null },
     projectId: { type: Schema.Types.ObjectId, ref: "Project" },
+    /** Stamped by `signMou()` in the signing transaction — the moment the deal was committed, distinct from `mouDate` (the document's own date). Backs "Signed MOUs this financial year". */
+    signedAt: { type: Date, default: null, index: true },
   },
   { collection: "mous" },
 );

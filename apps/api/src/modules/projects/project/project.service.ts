@@ -69,18 +69,34 @@ export async function listProjects(opts: {
 }
 
 /** Project counts per SoW portfolio status, as a `$group` over the real lifecycle status. TERMINATED is null — nothing maps to it. */
-export async function getPortfolioCounts(): Promise<Pick<DashboardPortfolioDto, "byStatus" | "openCount">> {
-  const rows = await ProjectModel.aggregate<{ _id: ProjectStatus; count: number }>([
+export async function getPortfolioCounts(): Promise<
+  Pick<DashboardPortfolioDto, "byStatus" | "openCount" | "activeContractValuePaise" | "activeWithoutValueCount">
+> {
+  const rows = await ProjectModel.aggregate<{ _id: ProjectStatus; count: number; value: number; withoutValue: number }>([
     { $match: { deletedAt: null } },
-    { $group: { _id: "$status", count: { $sum: 1 } } },
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+        value: { $sum: { $ifNull: ["$contractValuePaise", 0] } },
+        withoutValue: { $sum: { $cond: [{ $eq: [{ $ifNull: ["$contractValuePaise", null] }, null] }, 1, 0] } },
+      },
+    },
   ]);
   const counts = new Map<ProjectPortfolioStatus, number>();
+  const activeStatuses = projectStatusesIn(ProjectPortfolioStatus.ACTIVE);
   let openCount = 0;
+  let activeContractValuePaise = 0;
+  let activeWithoutValueCount = 0;
   for (const row of rows) {
     const portfolio = PROJECT_PORTFOLIO_STATUS_OF[row._id];
     if (!portfolio) continue;
     counts.set(portfolio, (counts.get(portfolio) ?? 0) + row.count);
     if (OPEN_PROJECT_STATUSES.includes(row._id)) openCount += row.count;
+    if (activeStatuses.includes(row._id)) {
+      activeContractValuePaise += row.value;
+      activeWithoutValueCount += row.withoutValue;
+    }
   }
   return {
     byStatus: PROJECT_PORTFOLIO_STATUS_ORDER.map((status) => ({
@@ -88,6 +104,8 @@ export async function getPortfolioCounts(): Promise<Pick<DashboardPortfolioDto, 
       count: projectStatusesIn(status).length === 0 ? null : (counts.get(status) ?? 0),
     })),
     openCount,
+    activeContractValuePaise,
+    activeWithoutValueCount,
   };
 }
 

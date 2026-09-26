@@ -133,14 +133,18 @@ Mapped onto real Methanova entities — not generic placeholders. Respect `PROJE
 Top to bottom. Each section is shown only when the viewer's role can read its module; this is one page of gated widgets, not a page per role:
 - **Quick actions** in the page header (`Button size="sm" variant="secondary"`): New lead, Log activity, New quotation, New MOU, New progress update. Each opens the existing modal (`AddLeadWizard`, `LogActivityModal` with a lead picker when no lead is passed, `CreateQuotationModal`, `CreateMouModal`, `LogProgressModal`), and each shows only with WRITE on its module.
 - **Critical alerts**: at most 6 rows, each linking to its exact record (`?id=`). The rows are the worst delayed work packages, licences past target and invoices past due, taken from the same records as Project Health's reasons. Tone is always `problem`. This is not a notification feed; the bell is the notification system.
-- **CRM strip**: five `StatCard`s. Unassigned and Awaiting first response open the Lead Inbox on that segment (`?segment=`).
+- **KPI row, set per role** (`KPI_ROW_BY_ROLE`): a list of `StatCard` definitions, each gated by its module.
+  - Director: four cards, `lg:grid-cols-4`. Active projects, Open pipeline, Outstanding receivables, Signed MOUs · FY.
+  - Sales Head/BDE, and any role without its own row: the five lead cards, `lg:grid-cols-5`. Unassigned, Awaiting first response and Parked due for revisit open the Lead Inbox on that segment.
+
+  Money in the value slot is formatted in crores; money in a label that can be small (retention) is exact rupees, so it never rounds to "₹0.00 Cr". A new role row is one new entry, not a new branch.
 - **Portfolio**: one `StatCard` per SoW status (Active, On hold, Completed, Terminated), plus At risk. Terminated shows "Not available" and has no link, because nothing can be terminated yet.
-- **Project health table**: project, client, PM, stage (the real lifecycle status), progress, target, revised target, SoW status, and the risk reasons. Each reason is a sentence ("1 delayed work package — worst: X, 12 days late") linking to that project's filtered list, and a project with none shows an `On track` pill. There is never a numeric score. A missing field reads "Not available"; a target that was never revised reads "Not revised", because that is a real state, not missing data.
+- **Project health table**: project, client, PM, stage (the real lifecycle status), progress, current work package (name linking to the record, with % and planned end; otherwise "No schedule yet" or "All complete"), target, revised target, SoW status, and the risk reasons. Each reason is a sentence ("1 delayed work package — worst: X, 12 days late") linking to that project's filtered list, and a project with none shows an `On track` pill. There is never a numeric score. A missing field reads "Not available"; a target that was never revised reads "Not revised", because that is a real state, not missing data.
 - **Delayed work packages**: capped table; each row opens its work package, and "View all" opens the full delayed list.
 - **Billing & collections**: the chart draws only once at least 3 months have activity. Before that, a sentence plus each month's actual figures.
 - **Compliance health**: `DonutMeter`, then past-target and expiring-soon counts, then per-status counts; every figure is a link.
 - **Compliance by project**: table; each row opens that project's licences.
-- **Receivables ageing**: one `StatCard` per `AgeingBucket` plus "No due date", each opening the invoice list on that bucket.
+- **Receivables ageing**: one `StatCard` per `AgeingBucket` plus "No due date", each opening the invoice list on that bucket. A separate "Retention held · not aged" card opens `?retention=1`, because retention is never in a bucket.
 - **Top outstanding receivables**: capped table sorted by amount; "View all" opens `?receivable=1`.
 - **Sales pipeline**: stage rows open the Lead Inbox on that stage.
 - **Recent activity**.

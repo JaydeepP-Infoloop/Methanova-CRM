@@ -31,6 +31,8 @@ export interface InvoiceRow extends BaseRecord {
   clientName?: string | null;
   /** Total less live receipts, computed by the API. */
   outstandingPaise?: number;
+  /** Retention still withheld — shown apart, never aged or counted as overdue. */
+  retentionHeldPaise?: number;
   /** Derived by the API on every read — see derived.ts `invoiceAgeing()`. */
   isOverdue?: boolean;
   daysOverdue?: number;

@@ -15,7 +15,8 @@ import { StatusPill } from "../../../components/StatusPill";
 import { useToast } from "../../../components/Toast";
 import { ApiError } from "../../../lib/apiClient";
 import { emptyStateMessage } from "../../../lib/emptyState";
-import { formatPaise } from "../../../lib/formatters";
+import { formatDate, formatPaise } from "../../../lib/formatters";
+import { UrlFilterNotice } from "../../../components/UrlFilterNotice";
 import { useUrlFilters } from "../../../lib/useUrlFilters";
 import { useUpdateMouApprovalSettings } from "../../admin/api/reference.api";
 import { useLeadLabels } from "../api/lead-lookup";
@@ -33,7 +34,7 @@ const FILTER_SELECT_CLASS =
 export function MouPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const url = useUrlFilters(["status"] as const);
+  const url = useUrlFilters(["status", "signedFrom"] as const);
   const { data, isLoading, error } = mouApi.useList(url.filters);
   const transition = mouApi.useTransition();
   const toast = useToast();
@@ -126,6 +127,12 @@ export function MouPage() {
 
       {canManageThreshold && <ApprovalThresholdCard />}
 
+      {url.filters.signedFrom && (
+        <UrlFilterNotice
+          labels={[`Signed on or after ${formatDate(url.filters.signedFrom)}`]}
+          onClear={() => url.replace({ status: url.filters.status, signedFrom: undefined })}
+        />
+      )}
       <FilterBar search={search} onSearchChange={setSearch} placeholder="Search MOUs by code or status…">
         <select
           aria-label="Filter by status"
