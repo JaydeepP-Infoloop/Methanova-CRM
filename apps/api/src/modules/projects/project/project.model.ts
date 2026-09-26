@@ -58,3 +58,27 @@ export async function openProjectScope(): Promise<Record<string, unknown>> {
   const rows = await ProjectModel.find({ status: { $in: OPEN_PROJECT_STATUSES } }).select("_id").lean();
   return { projectId: { $in: rows.map((row) => row._id) } };
 }
+
+/**
+ * "Assigned to me" — the one definition behind `/api/projects?mine=true`,
+ * the work-package list's `?mine=1`, and the Project Manager's KPI row: the
+ * user is the project's PM, site engineer, liaison officer, or a team member.
+ */
+export function assignedToUserFilter(userId: string): Record<string, unknown> {
+  const id = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+  return {
+    $or: [
+      { projectManagerUserId: id },
+      { siteEngineerUserId: id },
+      { liaisonOfficerUserId: id },
+      { "members.userId": id },
+    ],
+  };
+}
+
+/** Open projects assigned to the user, with status — scoped exactly like the dashboard's other live-risk figures. */
+export async function listMyOpenProjects(userId: string): Promise<{ _id: mongoose.Types.ObjectId; status: string }[]> {
+  return ProjectModel.find({ ...assignedToUserFilter(userId), status: { $in: OPEN_PROJECT_STATUSES } })
+    .select("_id status")
+    .lean<{ _id: mongoose.Types.ObjectId; status: string }[]>();
+}

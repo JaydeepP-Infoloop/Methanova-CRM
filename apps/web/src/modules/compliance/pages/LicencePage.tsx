@@ -19,11 +19,12 @@ import { LicenceStatusBadge } from "../components/LicenceStatusBadge";
 import type { LicenceRow } from "../types";
 
 export function LicencePage() {
-  const url = useUrlFilters(["projectId", "overdue", "expiringSoon", "status", "id", "openProjects"] as const);
+  const url = useUrlFilters(["projectId", "overdue", "expiringSoon", "appliedThisWeek", "status", "id", "openProjects"] as const);
   const { data, isLoading, error } = licencesApi.useList(url.filters);
   const filterLabels = [
     ...(url.filters.overdue ? ["Past target date, not cleared"] : []),
     ...(url.filters.expiringSoon ? ["Expiring soon"] : []),
+    ...(url.filters.appliedThisWeek ? ["Applied in the last 7 days"] : []),
     ...(url.filters.status ? [`Status ${url.filters.status.replace(/_/g, " ")}`] : []),
     ...(url.filters.id ? ["One licence"] : []),
     ...(url.filters.openProjects ? ["Open projects only"] : []),

@@ -144,10 +144,24 @@ Companion docs: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for what the system d
   - **Project Health "Health" column:** an `At risk` pill (problem tone) with its linked reasons beneath, or `On track` (positive tone), both driven only by the server's reasons. `Not assessed` (neutral) shows for a viewer who can check none of the three risk kinds.
   - **My Day widget beside Recent Activity** (two columns): the viewer's own overdue and due-today commitments, at most 4, from the existing `useMyDay` / `/api/crm/my-day`. It has an "Open My Day" link and a real "Nothing due today" empty state.
   - The risk pipelines stayed as grouped per-collection aggregations, not `$lookup`; see PROJECT_CONTEXT.md for why.
-- [ ] **Out of scope going forward — not unfinished redesign work:**
-  - **The Pending Approvals widget.** The Director-approval-threshold gate exists, but only as a refusal: `signMou()` returns 403 above the threshold unless the signer holds admin/FULL. There is no pending-approval record, request or queue, so there is nothing yet for a widget to list. It needs an approval workflow first.
-  - **Project Manager, Accounts and Liaison-specific KPI rows.** `KPI_ROW_BY_ROLE` supports them (one entry each), but they aren't defined. Project Manager and Accounts see the lead row meanwhile; Liaison sees no KPI row, since it has no CRM access.
-  - **Small-screen shell.** The sidebar doesn't collapse on phones. It affects every page, not just the dashboard, and is tracked as its own task.
+- [x] **Dashboard redesign, Phase 4 — done.** Rationale and verification are in PROJECT_CONTEXT.md, "Phase 4".
+  - **Role KPI rows**, each one `KPI_ROW_BY_ROLE` entry:
+    - Project Manager: My active projects, Due in the next 7 days, Delayed packages, Overall progress. All come from a server-side `myProjects` block.
+    - Accounts: Outstanding, Invoices overdue, Collected this month, Retention held, in exact rupees.
+    - Liaison: Licences past target, Applied in the last 7 days.
+  - **Omitted, because the data doesn't exist:**
+    - Milestones ready to raise: no readiness state on `PaymentSchedule`.
+    - Queries awaiting response and Upcoming authority visits: `Licence.queries[]`/`visits[]` have no write path, so they are always empty.
+  - **Critical Alerts are weighted by role:** PM → delayed packages (own projects first), Accounts → overdue invoices, Liaison → overdue licences. It is a sort over the same pool and says so on the card.
+  - **New drill-down filters:** work packages `?mine=1` and `?dueThisWeek=1`, licences `?appliedThisWeek=1`, receipts `?month=YYYY-MM`. Projects' "Assigned to me" is now URL-driven (`?mine=true`).
+  - **Fixed:** quick-action modals no longer fetch, or 403, on every dashboard load.
+  - **The health-pill accessibility concern was checked and needs no change:** its text is the status.
+- [x] **The dashboard redesign plan is complete across all four phases:** role-aware KPI row, receivables and compliance counts, current work package, project health pill, My Day widget, and role KPI rows with weighted attention.
+- [ ] **Still open — the one remaining redesign item:**
+  - **The Pending Approvals widget**, blocked on the Director-approval-threshold gate. Checked in this codebase: the gate *does* exist, as a refusal only. `signMou()` returns 403 at or above `mou-approval-settings.thresholdPaise` unless the signer holds admin/FULL. It never creates a pending-approval record or queue, so there is nothing for a widget to list until an approval-request workflow exists.
+- [ ] **Separate from the redesign:**
+  - Liaison's two omitted cards become live once the licence visit and query logs are built (see Projects & Compliance above).
+  - The small-screen shell (the sidebar doesn't collapse on phones) is tracked as its own task.
 - [ ] **Deferred — separate P2/P3 scope per the SoW, not unfinished dashboard work:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures, client-portal data (and a client-scoped dashboard), offline site capture, and a TERMINATED project state (no lifecycle transition exists to end a project).
 - [ ] Reporting endpoints
 - [ ] **CRM Reports**

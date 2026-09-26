@@ -10,16 +10,20 @@ import {
   type DashboardProjectHealthRowDto,
   type ProjectRiskReasonDto,
   type WorkPackageDelayReason,
-  type Role,
+  ProjectPortfolioStatus,
+  Role,
+  type ProjectStatus,
 } from "@methanova/shared-types";
 import { getMonthlyInvoicedTotals, getReceivablesSummary } from "../../billing/invoices/invoices.service.js";
 import { getComplianceHealth, getLicenceExpiryWindowDays } from "../../compliance/licences/licences.service.js";
 import { getPortfolioCounts, listOpenProjects } from "../../projects/project/project.service.js";
+import { listMyOpenProjects } from "../../projects/project/project.model.js";
 import { getMonthlyReceiptTotals } from "../../receivables/receipts/receipts.service.js";
 import {
   getCurrentWorkPackages,
   getDelayedWorkPackagesSummary,
   getProgressByProject,
+  getScheduleSummary,
 } from "../../schedule/work-packages/work-packages.service.js";
 import { listActivities } from "../activities/activities.service.js";
 import { getPipelineByStage } from "../leads/leads.service.js";
@@ -149,10 +153,35 @@ export async function getAtRiskProjectIds(actorRole: Role): Promise<string[]> {
   return [...risk.reasons.keys()];
 }
 
-/** Most days late first; ties go to the larger amount owed. */
-function criticalAlerts(risk: Awaited<ReturnType<typeof loadRisk>>): DashboardCriticalAlertDto[] {
-  const alerts: DashboardCriticalAlertDto[] = [
-    ...(risk.delayed?.rows ?? []).map((row) => ({
+/**
+ * The risk kind each role sees first in Critical Alerts — the thing that role
+ * is on the hook for. A role without an entry gets the plain order. This is a
+ * sort over the same alert pool, not a second version of the section.
+ */
+const ATTENTION_PRIORITY_BY_ROLE: Partial<Record<Role, ProjectRiskKind>> = {
+  [Role.PROJECT_MANAGER]: ProjectRiskKind.DELAYED_WORK_PACKAGE,
+  [Role.ACCOUNTS]: ProjectRiskKind.OVERDUE_INVOICE,
+  [Role.LIAISON_COMPLIANCE_OFFICER]: ProjectRiskKind.OVERDUE_LICENCE,
+};
+
+type DelayedRows = NonNullable<Awaited<ReturnType<typeof loadRisk>>["delayed"]>["rows"];
+
+/**
+ * The priority kind first (and within it, items on the viewer's own projects
+ * first), then most days late, then the larger amount owed. `ownDelayed` adds
+ * the viewer's own delayed packages to the pool, so a Project Manager's items
+ * surface even when other projects' packages are later.
+ */
+function criticalAlerts(
+  risk: Awaited<ReturnType<typeof loadRisk>>,
+  priority: ProjectRiskKind | null,
+  myProjectIds: Set<string>,
+  ownDelayed: DelayedRows,
+): DashboardCriticalAlertDto[] {
+  const delayedPool = [...(risk.delayed?.rows ?? [])];
+  for (const row of ownDelayed) if (!delayedPool.some((existing) => String(existing._id) === String(row._id))) delayedPool.push(row);
+  const alerts: Omit<DashboardCriticalAlertDto, "onMyProject">[] = [
+    ...delayedPool.map((row) => ({
       kind: ProjectRiskKind.DELAYED_WORK_PACKAGE,
       id: String(row._id),
       projectId: String(row.projectId),
@@ -181,8 +210,14 @@ function criticalAlerts(risk: Awaited<ReturnType<typeof loadRisk>>): DashboardCr
       outstandingPaise: row.outstandingPaise,
     })),
   ];
+  const rank = (alert: DashboardCriticalAlertDto) =>
+    alert.kind === priority ? (alert.onMyProject ? 0 : 1) : 2;
   return alerts
-    .sort((a, b) => b.days - a.days || (b.outstandingPaise ?? 0) - (a.outstandingPaise ?? 0))
+    .map((alert) => ({ ...alert, onMyProject: myProjectIds.has(alert.projectId) }))
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) || b.days - a.days || (b.outstandingPaise ?? 0) - (a.outstandingPaise ?? 0),
+    )
     .slice(0, CRITICAL_ALERT_LIMIT);
 }
 
@@ -199,14 +234,20 @@ function criticalAlerts(risk: Awaited<ReturnType<typeof loadRisk>>): DashboardCr
  * what lets a Liaison Officer (compliance, no crm) see Compliance Health
  * without also being able to fetch lead data through this endpoint.
  */
-export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
+export async function getDashboard(actor: { id: string; role: Role }): Promise<DashboardDto> {
+  const actorRole = actor.role;
   const can = access(actorRole);
   const now = new Date();
   const { keys: months, since } = trailingMonths(BILLING_TRAILING_MONTHS);
 
   const fy = currentFinancialYear(now);
+  const priority = ATTENTION_PRIORITY_BY_ROLE[actorRole] ?? null;
+  // Projects assigned to the viewer, from the verified token's user id — the
+  // Project Manager row and the "own items first" alert weighting both read it.
+  const myOpenProjects = can.projects ? await listMyOpenProjects(actor.id) : [];
+  const myOpenIds = myOpenProjects.map((project) => project._id);
 
-  const [pipeline, mou, signed, quotations, activityPage, invoicedByMonth, collectedByMonth, risk, portfolio] =
+  const [pipeline, mou, signed, quotations, activityPage, invoicedByMonth, collectedByMonth, risk, portfolio, mySchedule, ownDelayed] =
     await Promise.all([
       can.crm ? getPipelineByStage() : Promise.resolve([]),
       can.crm ? getMouSummaryByStatus() : Promise.resolve([]),
@@ -219,6 +260,10 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
       can.billing ? getMonthlyReceiptTotals(since) : Promise.resolve(new Map<string, number>()),
       loadRisk(can, now),
       can.projects ? getPortfolioCounts() : Promise.resolve(null),
+      can.projects && can.schedule ? getScheduleSummary(myOpenIds, now) : Promise.resolve(null),
+      priority === ProjectRiskKind.DELAYED_WORK_PACKAGE && can.schedule && myOpenIds.length
+        ? getDelayedWorkPackagesSummary(myOpenIds, now, CRITICAL_ALERT_LIMIT).then((summary) => summary.rows)
+        : Promise.resolve([]),
     ]);
 
   const billing: DashboardBillingMonthDto[] = can.billing
@@ -300,6 +345,14 @@ export async function getDashboard(actorRole: Role): Promise<DashboardDto> {
         }
       : null,
     receivables: risk.receivables?.summary ?? null,
-    criticalAlerts: criticalAlerts(risk),
+    criticalAlerts: criticalAlerts(risk, priority, new Set(myOpenIds.map(String)), ownDelayed),
+    criticalAlertsPriority: priority,
+    myProjects: mySchedule
+      ? {
+          activeCount: myOpenProjects.filter((project) => PROJECT_PORTFOLIO_STATUS_OF[project.status as ProjectStatus] === ProjectPortfolioStatus.ACTIVE).length,
+          openCount: myOpenProjects.length,
+          ...mySchedule,
+        }
+      : null,
   };
 }

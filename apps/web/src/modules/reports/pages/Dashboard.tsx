@@ -494,13 +494,169 @@ const DIRECTOR_KPI_ROW: KpiRowDef = {
 };
 
 /**
- * The KPI row per role. Add a Project Manager, Accounts or Liaison entry here
- * to give that role its own row — nothing else changes. A role without an
- * entry gets the lead strip, filtered like every card by its own module.
+ * Project Manager: the projects assigned to them (PM, site engineer, liaison
+ * or member — the app's "Assigned to me"). Every figure comes from the
+ * server's `myProjects`, resolved from the verified token. "Milestones ready
+ * to raise" is deliberately absent: `PaymentSchedule.lines` carries no stored
+ * or derivable readiness state, so there is no real number to show.
+ */
+const PROJECT_MANAGER_KPI_ROW: KpiRowDef = {
+  gridClass: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
+  busy: ({ dashboard }) => dashboard.isLoading,
+  cards: [
+    {
+      key: "myActiveProjects",
+      module: AppModule.projects,
+      icon: FolderKanban,
+      label: ({ dashboard }) => {
+        const mine = dashboard.data?.myProjects;
+        return mine ? `My active projects · ${mine.openCount} open incl. on hold` : "My active projects";
+      },
+      value: ({ dashboard }) => stat(dashboard.data?.myProjects?.activeCount),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => `/app/projects?portfolio=${ProjectPortfolioStatus.ACTIVE}&mine=true`,
+    },
+    {
+      key: "dueThisWeek",
+      module: AppModule.schedule,
+      icon: CalendarClock,
+      label: () => "Work packages due in the next 7 days",
+      value: ({ dashboard }) => stat(dashboard.data?.myProjects?.dueThisWeekCount),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/schedule/work-packages?dueThisWeek=1&mine=1",
+    },
+    {
+      key: "myDelayed",
+      module: AppModule.schedule,
+      icon: AlertTriangle,
+      label: () => "Delayed work packages",
+      value: ({ dashboard }) => stat(dashboard.data?.myProjects?.delayedCount),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/schedule/work-packages?delayed=1&mine=1",
+    },
+    {
+      key: "overallProgress",
+      module: AppModule.schedule,
+      icon: BadgeCheck,
+      label: () => "Overall progress · my open projects",
+      value: ({ dashboard }) => {
+        const mine = dashboard.data?.myProjects;
+        if (!mine) return "—";
+        return mine.progressPct === null ? NOT_AVAILABLE : `${mine.progressPct}%`;
+      },
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/projects?mine=true",
+    },
+  ],
+};
+
+/** Accounts: cash owed, cash late, cash in, cash withheld — exact rupees, because Accounts reconciles to the paisa. */
+const ACCOUNTS_KPI_ROW: KpiRowDef = {
+  gridClass: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
+  busy: ({ dashboard }) => dashboard.isLoading,
+  cards: [
+    {
+      key: "outstanding",
+      module: AppModule.receivables,
+      icon: CircleDollarSign,
+      label: ({ dashboard }) => {
+        const receivables = dashboard.data?.receivables;
+        return receivables ? `Outstanding · ${plural(receivables.openCount, "invoice")}` : "Outstanding";
+      },
+      value: ({ dashboard }) =>
+        dashboard.data?.receivables ? formatPaise(dashboard.data.receivables.totalOutstandingPaise) : "—",
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/billing/invoices?receivable=1",
+    },
+    {
+      key: "invoicesOverdue",
+      module: AppModule.receivables,
+      icon: AlertTriangle,
+      label: ({ dashboard }) => {
+        const overdue = dashboard.data?.receivables?.overdue;
+        return overdue ? `Invoices overdue · ${formatPaise(overdue.outstandingPaise)}` : "Invoices overdue";
+      },
+      value: ({ dashboard }) => stat(dashboard.data?.receivables?.overdue.count),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/billing/invoices?overdue=1",
+    },
+    {
+      key: "collectedThisMonth",
+      module: AppModule.billing,
+      icon: Hourglass,
+      label: ({ dashboard }) => {
+        const month = dashboard.data?.billing.at(-1);
+        return month ? `Collected · ${monthLabel(month.month)}` : "Collected this month";
+      },
+      value: ({ dashboard }) => {
+        const month = dashboard.data?.billing.at(-1);
+        return month ? formatPaise(month.collectedPaise) : "—";
+      },
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: ({ dashboard }) => {
+        const month = dashboard.data?.billing.at(-1);
+        return month ? `/app/receivables/receipts?month=${month.month}` : "/app/receivables/receipts";
+      },
+    },
+    {
+      key: "retentionHeld",
+      module: AppModule.receivables,
+      icon: PauseCircle,
+      label: ({ dashboard }) => {
+        const retention = dashboard.data?.receivables?.retentionHeld;
+        return retention ? `Retention held · ${plural(retention.count, "invoice")} · not aged` : "Retention held";
+      },
+      value: ({ dashboard }) =>
+        dashboard.data?.receivables ? formatPaise(dashboard.data.receivables.retentionHeld.paise) : "—",
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/billing/invoices?retention=1",
+    },
+  ],
+};
+
+/**
+ * Liaison & Compliance Officer. "Queries awaiting response" and "Upcoming
+ * authority visits" are deliberately absent: `Licence.queries[]`/`visits[]`
+ * exist but nothing can write to them yet (the visit/query logs are unbuilt),
+ * so both would read a permanent, meaningless zero. Each becomes one entry
+ * here once those logs exist.
+ */
+const LIAISON_KPI_ROW: KpiRowDef = {
+  gridClass: "grid grid-cols-1 gap-4 sm:grid-cols-2",
+  busy: ({ dashboard }) => dashboard.isLoading,
+  cards: [
+    {
+      key: "licencesOverdue",
+      module: AppModule.compliance,
+      icon: ShieldAlert,
+      label: () => "Licences past target, not cleared",
+      value: ({ dashboard }) => stat(dashboard.data?.compliance?.overdueCount),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/compliance/licences?overdue=1&openProjects=1",
+    },
+    {
+      key: "appliedThisWeek",
+      module: AppModule.compliance,
+      icon: BadgeCheck,
+      label: () => "Applied in the last 7 days",
+      value: ({ dashboard }) => stat(dashboard.data?.compliance?.appliedThisWeekCount),
+      isLoading: ({ dashboard }) => dashboard.isLoading,
+      to: () => "/app/compliance/licences?appliedThisWeek=1&openProjects=1",
+    },
+  ],
+};
+
+/**
+ * The KPI row per role — one entry per role, nothing else changes. A role
+ * without an entry gets the lead strip, filtered like every card by its own
+ * module.
  */
 const KPI_ROW_BY_ROLE: Partial<Record<Role, KpiRowDef>> = {
   [Role.DIRECTOR]: DIRECTOR_KPI_ROW,
   [Role.SALES_HEAD_BDE]: LEAD_KPI_ROW,
+  [Role.PROJECT_MANAGER]: PROJECT_MANAGER_KPI_ROW,
+  [Role.ACCOUNTS]: ACCOUNTS_KPI_ROW,
+  [Role.LIAISON_COMPLIANCE_OFFICER]: LIAISON_KPI_ROW,
 };
 
 export function Dashboard() {
@@ -617,22 +773,31 @@ export function Dashboard() {
               No delayed work packages, licences past target or invoices past due right now.
             </p>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {alerts.map((alert) => (
-                <li key={`${alert.kind}-${alert.id}`}>
-                  <Link
-                    to={riskHref(alert.kind, { id: alert.id })}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-methanova-gold motion-reduce:transition-none"
-                  >
-                    <StatusPill value={RISK_KIND_LABELS[alert.kind]} tone="problem" />
-                    <span className="text-sm font-medium text-slate-900">{alertText(alert)}</span>
-                    <span className="text-xs text-slate-500">
-                      {alert.projectCode} · {alert.client}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <>
+              {data?.criticalAlertsPriority && (
+                <p className="border-b border-slate-100 px-5 py-2 text-xs text-slate-500">
+                  {RISK_KIND_LABELS[data.criticalAlertsPriority]} items first, then the rest by days late —
+                  weighted for your role.
+                </p>
+              )}
+              <ul className="divide-y divide-slate-100">
+                {alerts.map((alert) => (
+                  <li key={`${alert.kind}-${alert.id}`}>
+                    <Link
+                      to={riskHref(alert.kind, { id: alert.id })}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-methanova-gold motion-reduce:transition-none"
+                    >
+                      <StatusPill value={RISK_KIND_LABELS[alert.kind]} tone="problem" />
+                      <span className="text-sm font-medium text-slate-900">{alertText(alert)}</span>
+                      <span className="text-xs text-slate-500">
+                        {alert.projectCode} · {alert.client}
+                        {alert.onMyProject && " · your project"}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </Card>
       )}
@@ -1027,19 +1192,23 @@ export function Dashboard() {
         </div>
       )}
 
-      <AddLeadWizard
-        open={quickAction === "lead"}
-        onClose={closeQuickAction}
-        onCreated={(lead) => {
-          closeQuickAction();
-          navigate(`/app/crm/leads/${lead._id}`);
-        }}
-      />
-      <LogActivityModal open={quickAction === "activity"} onClose={closeQuickAction} />
-      <CreateQuotationModal open={quickAction === "quotation"} onClose={closeQuickAction} />
-      <CreateMouModal open={quickAction === "mou"} onClose={closeQuickAction} />
-      {/* Mounted only while open: it loads the work-package list, which a role
-          without schedule access would otherwise fetch (and 403 on) every visit. */}
+      {/* Every quick-action modal is mounted only while open: each loads its
+          own reference data (leads, quotations, masters, work packages), which
+          a role without that module's access would otherwise fetch — and 403
+          on — every time the dashboard loads. */}
+      {quickAction === "lead" && (
+        <AddLeadWizard
+          open
+          onClose={closeQuickAction}
+          onCreated={(lead) => {
+            closeQuickAction();
+            navigate(`/app/crm/leads/${lead._id}`);
+          }}
+        />
+      )}
+      {quickAction === "activity" && <LogActivityModal open onClose={closeQuickAction} />}
+      {quickAction === "quotation" && <CreateQuotationModal open onClose={closeQuickAction} />}
+      {quickAction === "mou" && <CreateMouModal open onClose={closeQuickAction} />}
       {quickAction === "progress" && <LogProgressModal open onClose={closeQuickAction} />}
     </div>
   );

@@ -20,9 +20,12 @@ const PORTFOLIO_LABELS: Record<string, string> = {
 
 export function ProjectPage() {
   const navigate = useNavigate();
-  const [mine, setMine] = useState(false);
-  const url = useUrlFilters(["portfolio", "atRisk"] as const);
-  const { data, isLoading, error } = useProjectList(mine, url.filters);
+  // "Assigned to me" lives in the URL too, so a dashboard link (?mine=true) lands with it ticked.
+  const url = useUrlFilters(["portfolio", "atRisk", "mine"] as const);
+  const mine = url.filters.mine === "true";
+  const { portfolio, atRisk } = url.filters;
+  const drillDownActive = Boolean(portfolio || atRisk);
+  const { data, isLoading, error } = useProjectList(mine, { portfolio, atRisk });
   const [search, setSearch] = useState("");
   const rows = filterRows(data ?? [], search, ["name", "code", "status"]);
   const filterLabels = [
@@ -58,10 +61,12 @@ export function ProjectPage() {
         title="Projects"
         subtitle="Everything created the moment an MOU is signed, through commissioning and handover."
       />
-      {url.active && <UrlFilterNotice labels={filterLabels} onClear={url.clear} />}
+      {drillDownActive && (
+        <UrlFilterNotice labels={filterLabels} onClear={() => url.replace({ portfolio: undefined, atRisk: undefined, mine: url.filters.mine })} />
+      )}
       <FilterBar search={search} onSearchChange={setSearch} placeholder="Search by project name, code or status…">
         <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" checked={mine} onChange={(event) => setMine(event.target.checked)} />
+          <input type="checkbox" checked={mine} onChange={(event) => url.replace({ portfolio, atRisk, mine: event.target.checked ? "true" : undefined })} />
           Assigned to me
         </label>
       </FilterBar>
@@ -74,7 +79,7 @@ export function ProjectPage() {
         emptyHint={
           search
             ? emptyStateMessage({ entityLabel: "projects", hasSearch: true })
-            : url.active
+            : drillDownActive
               ? { message: "No projects match this filter." }
               : mine
                 ? { message: "You are not the Project Manager or a member on any plant yet." }

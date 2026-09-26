@@ -3,7 +3,8 @@ import * as service from "./work-packages.service.js";
 import * as validation from "./work-packages.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listWorkPackages(validation.listWorkPackagesQuerySchema.parse(req.query)));
+  const { mine, ...filters } = validation.listWorkPackagesQuerySchema.parse(req.query);
+  res.json(await service.listWorkPackages({ ...filters, assignedToUserId: mine ? req.user?.id : undefined }));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

@@ -73,6 +73,8 @@ export interface DashboardComplianceDto {
   byBundle: DashboardComplianceBundleDto[];
   overdueCount: number;
   expiringSoonCount: number;
+  /** Licences whose `appliedDate` falls in the last 7 days (the codebase's rolling "this week"). */
+  appliedThisWeekCount: number;
   /** The default window used where a licence has no `renewalLeadDays` of its own. */
   expiringWindowDays: number;
   byProject: DashboardComplianceProjectDto[];
@@ -196,6 +198,8 @@ export interface DashboardOutstandingInvoiceDto {
  * is reported apart in `retentionHeld`, per the SoW.
  */
 export interface DashboardReceivablesDto {
+  /** Outstanding invoices at least one day past `dueDate` — the `?overdue=1` list. Retention never counts here. */
+  overdue: { count: number; outstandingPaise: Paise };
   /** Retention still withheld across open receivables (reduced only by receipts beyond the collectible part). */
   retentionHeld: { count: number; paise: Paise };
   /** Every `AgeingBucket`, always present even at 0. */
@@ -218,6 +222,22 @@ export interface DashboardCriticalAlertDto {
   label: string;
   days: number;
   outstandingPaise?: Paise;
+  /** True when the item's project is assigned to the viewer (PM, site engineer, liaison or member). */
+  onMyProject: boolean;
+}
+
+/**
+ * Open projects assigned to the viewer and the state of their schedule — the
+ * Project Manager KPI row. Computed server-side from the verified token's
+ * user, never a client-supplied id. `progressPct` is `weightedProgressPct()`
+ * across every package on those projects; null when none exist.
+ */
+export interface DashboardMyProjectsDto {
+  activeCount: number;
+  openCount: number;
+  dueThisWeekCount: number;
+  delayedCount: number;
+  progressPct: number | null;
 }
 
 /** SIGNED MOUs by `signedAt` since the start of the current Indian financial year (1 April, IST). */
@@ -247,4 +267,7 @@ export interface DashboardDto {
   delayedWorkPackages: DashboardDelayedWorkPackagesDto | null;
   receivables: DashboardReceivablesDto | null;
   criticalAlerts: DashboardCriticalAlertDto[];
+  /** The risk kind this viewer's role sees first in Critical Alerts, or null for the plain most-days-late order. */
+  criticalAlertsPriority: ProjectRiskKind | null;
+  myProjects: DashboardMyProjectsDto | null;
 }

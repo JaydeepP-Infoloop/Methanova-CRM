@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ExecutionScope, WorkPackageDelayReason, WorkPackageStatus } from "@methanova/shared-types";
-import { listFilterFields } from "../../../utils/query.js";
+import { flagParam, listFilterFields } from "../../../utils/query.js";
 
 export const listWorkPackagesQuerySchema = z.object({
   id: listFilterFields.id,
@@ -8,6 +8,9 @@ export const listWorkPackagesQuerySchema = z.object({
   status: listFilterFields.status,
   delayed: listFilterFields.delayed,
   openProjects: listFilterFields.openProjects,
+  dueThisWeek: flagParam.optional(),
+  /** Projects assigned to the caller (PM, site engineer, liaison or member) — resolved from the token, never an id in the URL. */
+  mine: flagParam.optional(),
 });
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");

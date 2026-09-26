@@ -189,6 +189,7 @@ const AGEING_BUCKET_ORDER: AgeingBucket[] = [
 export async function getReceivablesSummary(now: Date, topLimit: number, overdueLimit: number): Promise<ReceivablesSummary> {
   const [result] = await InvoiceModel.aggregate<{
     retention: { count: number; held: number }[];
+    overdue: { count: number; outstanding: number }[];
     buckets: { _id: AgeingBucket; count: number; outstanding: number }[];
     noDueDate: { count: number; outstanding: number }[];
     totals: { count: number; outstanding: number }[];
@@ -225,6 +226,11 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
         noDueDate: [
           { $match: OUTSTANDING },
           { $match: { daysPastDue: null } },
+          { $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } },
+        ],
+        overdue: [
+          { $match: OUTSTANDING },
+          { $match: { daysPastDue: { $gte: 1 } } },
           { $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } },
         ],
         totals: [{ $match: OUTSTANDING }, { $group: { _id: null, count: { $sum: 1 }, outstanding: { $sum: "$outstandingPaise" } } }],
@@ -305,6 +311,10 @@ export async function getReceivablesSummary(now: Date, topLimit: number, overdue
       },
       openCount: result?.totals[0]?.count ?? 0,
       totalOutstandingPaise: result?.totals[0]?.outstanding ?? 0,
+      overdue: {
+        count: result?.overdue[0]?.count ?? 0,
+        outstandingPaise: result?.overdue[0]?.outstanding ?? 0,
+      },
       retentionHeld: {
         count: result?.retention[0]?.count ?? 0,
         paise: result?.retention[0]?.held ?? 0,

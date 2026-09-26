@@ -19,7 +19,7 @@ import { DelayWorkPackageModal } from "../components/DelayWorkPackageModal";
 import type { WorkPackageRow } from "../types";
 
 export function WorkPackagePage() {
-  const url = useUrlFilters(["projectId", "delayed", "status", "id", "openProjects"] as const);
+  const url = useUrlFilters(["projectId", "delayed", "dueThisWeek", "mine", "status", "id", "openProjects"] as const);
   const { data, isLoading, error } = workPackagesApi.useList(url.filters);
   const transition = useTransitionWorkPackage();
   const toast = useToast();
@@ -35,6 +35,8 @@ export function WorkPackagePage() {
       : emptyStateMessage({ entityLabel: "work packages", hasSearch: Boolean(search) });
   const filterLabels = [
     ...(url.filters.delayed ? ["Delayed only"] : []),
+    ...(url.filters.dueThisWeek ? ["Due in the next 7 days, not yet late"] : []),
+    ...(url.filters.mine ? ["My projects"] : []),
     ...(url.filters.status ? [`Status ${url.filters.status.replace(/_/g, " ")}`] : []),
     ...(url.filters.id ? ["One work package"] : []),
     ...(url.filters.openProjects ? ["Open projects only"] : []),

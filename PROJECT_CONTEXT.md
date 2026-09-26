@@ -309,6 +309,36 @@ Every panel on `Dashboard.tsx` now reads real data — the Billing, Compliance a
   - The two cards sat side by side at 1440px and stacked at 375px. No failed requests, and the test data was soft-deleted.
   - Found in passing, not caused by this change: on phone-width screens the 256px sidebar stays expanded, so every card is squeezed. Flagged as a separate task.
 
+**Done: dashboard redesign, Phase 4 — role KPI rows for Project Manager, Accounts and Liaison, role-weighted Critical Alerts.** Still one `GET /api/crm/dashboard` call, gated per section on the server, with no new components.
+
+- **Every card's data was checked first. Three requested cards were left out, not approximated:**
+  - *Milestones ready to raise* (Project Manager). `PaymentSchedule.lines` holds only `description`, `amountPaise` and free-text `dueOnMilestone`. Nothing stores or could derive a "ready to raise" state, and billing-conversion workflow is still unbuilt.
+  - *Queries awaiting response* and *Upcoming authority visits* (Liaison). `Licence.queries[]`/`visits[]` exist in the schema, but nothing can write to them: `signMou()` creates them empty, `updateLicenceSchema` doesn't accept them, and the visit/query logs are unbuilt (MODULE_MAP). Both cards would read a permanent zero, which is a made-up "all clear". Each becomes one `KPI_ROW_BY_ROLE` entry once those logs exist.
+- **Definitions:**
+  - "My projects" is the app's existing "Assigned to me" rule, now a single `assignedToUserFilter()` in `project.model.ts`: the user is the project's PM, site engineer, liaison officer or a team member. It backs `/api/projects?mine=true`, the new work-package `?mine=1`, and the PM row. It is always resolved from the verified token, never an id in the URL.
+  - "This week" follows the codebase's rolling 7-day convention. "Due this week" runs from now to the next 7 days (My Day's window), and its lower bound is exactly where the delayed rule stops, so a package can never be both or neither. "Applied this week" is the last 7 days (the Activity Log's "logged this week").
+  - Overall progress is `weightedProgressPct()` over every package on the user's open projects, computed as one `$group` (the same accumulators as per-project progress, now shared).
+- **The rows:**
+  - **Project Manager:** My active projects, Work packages due in the next 7 days, Delayed work packages, Overall progress. All come from a new server-side `myProjects` block (`getScheduleSummary`, one `$facet`), and each links to `?mine=1` / `?mine=true` lists whose counts match.
+  - **Accounts** (exact rupees, not crore):
+    - Outstanding (the existing retention-aware figure).
+    - Invoices overdue: a new `receivables.overdue` count and amount, which the existing `?overdue=1` list matches.
+    - Collected this month: the billing chart's own current-month figure, not recomputed, linking to the new receipts `?month=YYYY-MM` filter over the same UTC month.
+    - Retention held: the existing pool, across open receivables on live projects.
+  - **Liaison & Compliance Officer:** Licences past target (the existing `overdueLicenceFilter`; `isOverdue` is calculated, not stored) and Applied in the last 7 days (`Licence.appliedDate` from the schema-enrichment pass, with a new `?appliedThisWeek=1` filter). It is two cards for the reason given above.
+- **Critical Alerts (the redesign plan's "Needs your attention") is weighted by role** through `ATTENTION_PRIORITY_BY_ROLE`: a sort over the same alert pool, not a second section.
+  - Project Manager: delayed work packages first. Accounts: overdue invoices first. Liaison: overdue licences first. Other roles keep the plain most-days-late order.
+  - Within the priority kind, items on the viewer's own projects come first. For a Project Manager, their own delayed packages are also added to the pool, so they surface even when other projects' packages are later.
+  - The DTO carries `criticalAlertsPriority` and each alert's `onMyProject`. The card states the weighting in one line and marks "· your project".
+  - Accounts and Liaison can already see only one risk kind, so for them the weighting shows mainly in the note; it takes effect if their access widens.
+- **Accessibility claim, checked: no change was needed.** The brief said the health pill signals At risk vs On track by colour alone. It doesn't: the pill's text *is* the status ("At risk", "On track", "Not assessed"), and the At risk pill always carries its written reasons. Verified in the rendered DOM for the PM and Liaison views.
+- **Phase 3 bug fixed.** The four CRM quick-action modals (like `LogProgressModal` before them) were always mounted, so they fetched leads, quotations and master data on every dashboard load. A Liaison got seven 403s per visit. All five modals now mount only while open.
+- **Verified live** with temporary PM, Accounts and Liaison accounts (23 API checks, then each role's rendered page; accounts and data soft-deleted afterwards):
+  - PM: 1 active project, 1 package due in 7 days, 1 delayed, 48% progress, each drill-down matching. Alerts led with the PM's own 5-day-late package, ahead of another project's 30-day one, while the Director kept the plain order (invoice 40d, then 30d, 10d, 5d).
+  - Accounts: invoice outstanding of ₹2,36,000 − ₹36,000 retention − ₹1,00,000 received = ₹1,00,000. Collected-this-month equal to the `?month=` receipts. Retention equal to the `?retention=1` list.
+  - Liaison: both counts equal to their lists.
+  - No failed requests for any role after the modal fix.
+
 **Deliberately deferred — separate P2/P3 scope per the SoW, not unfinished parts of this dashboard:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures (IRN/GSTN-sourced totals), client-portal data (the CLIENT role is kept off the dashboard until then), and offline site capture. The in-app Notifications engine is its own built module; Critical Alerts is a read-only view over the dashboard's risk reasons and doesn't send, store or duplicate notifications.
 
 **Still not started: modules past this project/admin slice.** Feasibility, DPR, licence visit/query logs, and billing conversion remain scaffold. Do not invent a client portal theme or per-project CSS tokens.

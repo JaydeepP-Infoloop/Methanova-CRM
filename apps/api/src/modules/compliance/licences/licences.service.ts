@@ -53,6 +53,11 @@ export async function getLicenceExpiryWindowDays(): Promise<number> {
   return typeof days === "number" && Number.isFinite(days) && days >= 0 ? days : DEFAULT_LICENCE_EXPIRY_WINDOW_DAYS;
 }
 
+/** Submitted in the last 7 days — the codebase's rolling "this week" looking back (the Activity Log's "logged this week"). */
+export function appliedThisWeekLicenceFilter(now: Date) {
+  return { appliedDate: { $gte: new Date(now.getTime() - 7 * DAY_MS), $lte: now } };
+}
+
 /** The Mongo form of `licenceOverdue()`'s rule (derived.ts) — the two must stay in step. */
 export function overdueLicenceFilter(now: Date) {
   return {
@@ -84,6 +89,7 @@ export async function listLicences(
     overdue?: boolean;
     expiringSoon?: boolean;
     openProjects?: boolean;
+    appliedThisWeek?: boolean;
   } = {},
 ) {
   const now = new Date();
@@ -94,6 +100,7 @@ export async function listLicences(
   if (filters.status) clauses.push({ status: filters.status });
   if (filters.overdue) clauses.push(overdueLicenceFilter(now));
   if (filters.expiringSoon) clauses.push(expiringSoonLicenceFilter(now, await getLicenceExpiryWindowDays()));
+  if (filters.appliedThisWeek) clauses.push(appliedThisWeekLicenceFilter(now));
   const docs = await TheModel.find(clauses.length ? { $and: clauses } : {})
     .sort(filters.overdue ? { targetDate: 1 } : filters.expiringSoon ? { validUntil: 1 } : { createdAt: -1 })
     .limit(100);
@@ -150,6 +157,7 @@ export async function getComplianceHealth(
     byBundle: { _id: string; total: number; granted: number }[];
     overdueCount: { n: number }[];
     expiringCount: { n: number }[];
+    appliedThisWeek: { n: number }[];
     byProject: {
       _id: unknown;
       code: string | null;
@@ -178,6 +186,7 @@ export async function getComplianceHealth(
           },
         ],
         overdueCount: [{ $match: overdue }, { $count: "n" }],
+        appliedThisWeek: [{ $match: appliedThisWeekLicenceFilter(now) }, { $count: "n" }],
         expiringCount: [{ $match: expiring }, { $count: "n" }],
         byProject: [
           {
@@ -259,6 +268,7 @@ export async function getComplianceHealth(
       byBundle,
       overdueCount: result?.overdueCount[0]?.n ?? 0,
       expiringSoonCount: result?.expiringCount[0]?.n ?? 0,
+      appliedThisWeekCount: result?.appliedThisWeek[0]?.n ?? 0,
       expiringWindowDays: windowDays,
       byProject: (result?.byProject ?? []).map((row) => ({
         projectId: String(row._id),

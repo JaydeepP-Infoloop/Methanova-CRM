@@ -12,7 +12,7 @@ import { applyStatus } from "../../../core/state-machine/index.js";
 import { WorkPackageModel as TheModel } from "./work-packages.model.js";
 import { applyActor } from "../../../db/plugins/audit.plugin.js";
 import { assertAssignableUser } from "../../admin/users/users.service.js";
-import { openProjectScope } from "../../projects/project/project.model.js";
+import { listMyOpenProjects, openProjectScope } from "../../projects/project/project.model.js";
 
 /** Stored fields plus the read-time `isDelayed`/`daysDelayed` — computed on every read, never stored. */
 export function toWorkPackageView(doc: HydratedDocument<Record<string, unknown>>, now = new Date()) {
@@ -43,18 +43,48 @@ export function delayedWorkPackageFilter(now: Date) {
   };
 }
 
+/**
+ * Not yet delayed, still open, and planned to end within the next 7 days —
+ * the codebase's rolling "this week" (My Day's window). The lower bound is
+ * exactly where `delayedWorkPackageFilter` stops, so the two never overlap
+ * and a package can't fall between them.
+ */
+export function dueThisWeekWorkPackageFilter(now: Date) {
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  return {
+    status: { $nin: [...TERMINAL_WORK_PACKAGE_STATUSES] },
+    plannedEnd: { $gt: new Date(now.getTime() - DAY_MS), $lt: new Date(todayStart.getTime() + 8 * DAY_MS) },
+    $or: [{ percentComplete: { $lt: 100 } }, { percentComplete: null }],
+  };
+}
+
 export async function listWorkPackages(
-  filters: { id?: string; projectId?: string; status?: string; delayed?: boolean; openProjects?: boolean } = {},
+  filters: {
+    id?: string;
+    projectId?: string;
+    status?: string;
+    delayed?: boolean;
+    dueThisWeek?: boolean;
+    openProjects?: boolean;
+    /** Server-derived from the verified token, never a client-supplied id. */
+    assignedToUserId?: string;
+  } = {},
 ) {
   const now = new Date();
   const clauses: Record<string, unknown>[] = [];
   if (filters.openProjects) clauses.push(await openProjectScope());
+  if (filters.assignedToUserId) {
+    const mine = await listMyOpenProjects(filters.assignedToUserId);
+    clauses.push({ projectId: { $in: mine.map((project) => project._id) } });
+  }
+  if (filters.dueThisWeek) clauses.push(dueThisWeekWorkPackageFilter(now));
   if (filters.id) clauses.push({ _id: filters.id });
   if (filters.projectId) clauses.push({ projectId: filters.projectId });
   if (filters.status) clauses.push({ status: filters.status });
   if (filters.delayed) clauses.push(delayedWorkPackageFilter(now));
   const docs = await TheModel.find(clauses.length ? { $and: clauses } : {})
-    .sort(filters.delayed ? { plannedEnd: 1 } : { createdAt: -1 })
+    .sort(filters.delayed || filters.dueThisWeek ? { plannedEnd: 1 } : { createdAt: -1 })
     .limit(100);
   return docs.map((doc) => toWorkPackageView(doc, now));
 }
@@ -65,7 +95,8 @@ export async function listWorkPackages(
  * this and the per-project read can't disagree on a .5. Projects with no work
  * packages are absent from the result and read back as `null`.
  */
-export async function getProgressByProject(projectIds: unknown[]): Promise<Map<string, number | null>> {
+/** `weightedProgressPct()`'s accumulators and final expression as Mongo stages, shared by per-project and combined progress. */
+function progressAccumulators() {
   const pct = {
     $cond: [
       { $in: ["$status", [...TERMINAL_WORK_PACKAGE_STATUSES]] },
@@ -74,32 +105,62 @@ export async function getProgressByProject(projectIds: unknown[]): Promise<Map<s
     ],
   };
   const amount = { $ifNull: ["$amountPaise", 0] };
+  return {
+    count: { $sum: 1 },
+    weight: { $sum: amount },
+    weighted: { $sum: { $multiply: [pct, amount] } },
+    plain: { $sum: pct },
+  };
+}
+
+const PROGRESS_PCT_EXPR = {
+  $floor: {
+    $add: [
+      { $cond: [{ $gt: ["$weight", 0] }, { $divide: ["$weighted", "$weight"] }, { $divide: ["$plain", "$count"] }] },
+      0.5,
+    ],
+  },
+};
+
+export async function getProgressByProject(projectIds: unknown[]): Promise<Map<string, number | null>> {
   const rows = await TheModel.aggregate<{ _id: unknown; progressPct: number }>([
     { $match: { projectId: { $in: toObjectIds(projectIds) }, deletedAt: null } },
-    {
-      $group: {
-        _id: "$projectId",
-        count: { $sum: 1 },
-        weight: { $sum: amount },
-        weighted: { $sum: { $multiply: [pct, amount] } },
-        plain: { $sum: pct },
-      },
-    },
-    {
-      $project: {
-        progressPct: {
-          $floor: {
-            $add: [
-              { $cond: [{ $gt: ["$weight", 0] }, { $divide: ["$weighted", "$weight"] }, { $divide: ["$plain", "$count"] }] },
-              0.5,
-            ],
-          },
-        },
-      },
-    },
+    { $group: { _id: "$projectId", ...progressAccumulators() } },
+    { $project: { progressPct: PROGRESS_PCT_EXPR } },
   ]);
   const byId = new Map(rows.map((row) => [String(row._id), row.progressPct]));
   return new Map(projectIds.map((id) => [String(id), byId.get(String(id)) ?? null]));
+}
+
+/**
+ * The Project Manager KPI row over the given projects, as one `$facet`:
+ * packages due this week, delayed packages (the same two filters the
+ * `?dueThisWeek=1` / `?delayed=1` lists use), and `weightedProgressPct()`
+ * across all of them together — null when there are no packages at all.
+ */
+export async function getScheduleSummary(
+  projectIds: unknown[],
+  now: Date,
+): Promise<{ dueThisWeekCount: number; delayedCount: number; progressPct: number | null }> {
+  const [result] = await TheModel.aggregate<{
+    due: { n: number }[];
+    delayed: { n: number }[];
+    progress: { progressPct: number }[];
+  }>([
+    { $match: { projectId: { $in: toObjectIds(projectIds) }, deletedAt: null } },
+    {
+      $facet: {
+        due: [{ $match: dueThisWeekWorkPackageFilter(now) }, { $count: "n" }],
+        delayed: [{ $match: delayedWorkPackageFilter(now) }, { $count: "n" }],
+        progress: [{ $group: { _id: null, ...progressAccumulators() } }, { $project: { progressPct: PROGRESS_PCT_EXPR } }],
+      },
+    },
+  ]);
+  return {
+    dueThisWeekCount: result?.due[0]?.n ?? 0,
+    delayedCount: result?.delayed[0]?.n ?? 0,
+    progressPct: result?.progress[0]?.progressPct ?? null,
+  };
 }
 
 export interface CurrentWorkPackage {

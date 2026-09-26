@@ -1,6 +1,6 @@
 import { LicenceBundle, LicenceStatus, ResponsibleParty } from "@methanova/shared-types";
 import { z } from "zod";
-import { listFilterFields } from "../../../utils/query.js";
+import { flagParam, listFilterFields } from "../../../utils/query.js";
 
 export const listLicencesQuerySchema = z.object({
   id: listFilterFields.id,
@@ -8,6 +8,7 @@ export const listLicencesQuerySchema = z.object({
   status: listFilterFields.status,
   overdue: listFilterFields.overdue,
   expiringSoon: listFilterFields.expiringSoon,
+  appliedThisWeek: flagParam.optional(),
   openProjects: listFilterFields.openProjects,
 });
 

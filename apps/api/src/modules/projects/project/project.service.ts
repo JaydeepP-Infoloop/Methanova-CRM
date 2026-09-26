@@ -21,7 +21,7 @@ import { assertAssignableUser } from "../../admin/users/users.service.js";
 import { FeedstockTypeModel } from "../../admin/master-data/geography.model.js";
 import { getOrgLetterhead, projectStatusIsClosed, publicFile } from "../../files/files.service.js";
 import { StoredFileModel } from "../../files/files.model.js";
-import { ProjectModel } from "./project.model.js";
+import { assignedToUserFilter, ProjectModel } from "./project.model.js";
 
 const POPULATE = [
   { path: "projectManagerUserId", select: "name email role" },
@@ -39,16 +39,7 @@ export async function listProjects(opts: {
   onlyIds?: string[];
 }) {
   const clauses: Record<string, unknown>[] = [];
-  if (opts.mine && opts.userId) {
-    clauses.push({
-      $or: [
-        { projectManagerUserId: opts.userId },
-        { siteEngineerUserId: opts.userId },
-        { liaisonOfficerUserId: opts.userId },
-        { "members.userId": opts.userId },
-      ],
-    });
-  }
+  if (opts.mine && opts.userId) clauses.push(assignedToUserFilter(opts.userId));
   if (opts.portfolio) {
     if (!(PROJECT_PORTFOLIO_STATUS_ORDER as string[]).includes(opts.portfolio)) {
       throw new HttpError(400, "Unknown portfolio status");

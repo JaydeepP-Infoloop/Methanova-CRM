@@ -2,8 +2,14 @@ import { HttpError } from "../../../utils/http.js";
 import { ReceiptModel as TheModel } from "./receipts.model.js";
 import { applyActor } from "../../../db/plugins/audit.plugin.js";
 
-export async function listReceipts() {
-  return TheModel.find().sort({ createdAt: -1 }).limit(100);
+/** `month` is "YYYY-MM", a UTC calendar month — the same grouping `getMonthlyReceiptTotals` uses, so the Accounts "Collected this month" card and this list agree. */
+export async function listReceipts(filters: { month?: string } = {}) {
+  const query: Record<string, unknown> = {};
+  if (filters.month) {
+    const [year, month] = filters.month.split("-").map(Number);
+    query.receivedOn = { $gte: new Date(Date.UTC(year, month - 1, 1)), $lt: new Date(Date.UTC(year, month, 1)) };
+  }
+  return TheModel.find(query).sort(filters.month ? { receivedOn: -1 } : { createdAt: -1 }).limit(100);
 }
 
 /** The Dashboard Billing card's "collected" series — grouped by `receivedOn`, the date money actually landed, not `createdAt`. */
