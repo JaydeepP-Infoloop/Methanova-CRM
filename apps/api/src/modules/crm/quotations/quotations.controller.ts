@@ -3,7 +3,7 @@ import * as service from "./quotations.service.js";
 import * as validation from "./quotations.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listQuotations());
+  res.json(await service.listQuotations(validation.listQuotationsQuerySchema.parse(req.query)));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

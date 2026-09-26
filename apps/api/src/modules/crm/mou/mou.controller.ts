@@ -3,7 +3,7 @@ import * as service from "./mou.service.js";
 import * as validation from "./mou.validation.js";
 
 export async function list(req: Request, res: Response): Promise<void> {
-  res.json(await service.listMous());
+  res.json(await service.listMous(validation.listMousQuerySchema.parse(req.query)));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {

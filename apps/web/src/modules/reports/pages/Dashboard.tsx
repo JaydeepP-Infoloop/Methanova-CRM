@@ -716,7 +716,7 @@ export function Dashboard() {
               )}
 
               <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3">
-                <Link to="/app/crm/mou" className={LINK_CLASS}>
+                <Link to={`/app/crm/mou?status=${MouStatus.SIGNED}`} className={LINK_CLASS}>
                   <p className="text-xs text-slate-500">Signed MOUs</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {signedMou?.count ?? 0}
@@ -725,11 +725,11 @@ export function Dashboard() {
                     </span>
                   </p>
                 </Link>
-                <Link to="/app/crm/mou" className={LINK_CLASS}>
+                <Link to={`/app/crm/mou?status=${MouStatus.DRAFT},${MouStatus.SENT}`} className={LINK_CLASS}>
                   <p className="text-xs text-slate-500">MOUs in progress</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{inProgressMouCount}</p>
                 </Link>
-                <Link to="/app/crm/quotations" className={LINK_CLASS}>
+                <Link to="/app/crm/quotations?open=1" className={LINK_CLASS}>
                   <p className="text-xs text-slate-500">Open quotations</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {quotations?.openCount ?? 0}

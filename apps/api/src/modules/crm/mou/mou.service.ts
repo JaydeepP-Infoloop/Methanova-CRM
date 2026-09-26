@@ -45,8 +45,9 @@ export const MOU_APPROVAL_SETTINGS_KEY = "mou-approval-settings";
 /** ₹1 crore — a starting default pending the actual SoW figure; edit it from the admin screen, not here. */
 export const DEFAULT_MOU_APPROVAL_THRESHOLD_PAISE = 1_000_000_000;
 
-export async function listMous() {
-  return MouModel.find().sort({ createdAt: -1 }).limit(100);
+export async function listMous(filters: { status?: string[] } = {}) {
+  const query = filters.status ? { status: { $in: filters.status } } : {};
+  return MouModel.find(query).sort({ createdAt: -1 }).limit(100);
 }
 
 /**

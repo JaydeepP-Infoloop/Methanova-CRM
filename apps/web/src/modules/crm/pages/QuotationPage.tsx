@@ -1,4 +1,4 @@
-import { nextStates } from "@methanova/shared-types";
+import { nextStates, QUOTATION_STATUS_ORDER } from "@methanova/shared-types";
 import { GitCompare, Plus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../components/Button";
@@ -12,6 +12,7 @@ import { useToast } from "../../../components/Toast";
 import { ApiError } from "../../../lib/apiClient";
 import { emptyStateMessage } from "../../../lib/emptyState";
 import { formatDate, formatPaise } from "../../../lib/formatters";
+import { useUrlFilters } from "../../../lib/useUrlFilters";
 import { CreateQuotationModal } from "../components/CreateQuotationModal";
 import { useLeadLabels } from "../api/lead-lookup";
 import { quotationsApi, useQuotationRevisions } from "../api/quotations.api";
@@ -20,8 +21,16 @@ import type { QuotationRow } from "../types";
 /** The row plus the lead label resolved for display and search. */
 type QuotationListRow = QuotationRow & { leadLabel: string; leadCode?: string };
 
+/** Select value for `?open=1` — every non-terminal status, the same rule as the Dashboard's Open Quotations KPI. */
+const OPEN_OPTION = "__open";
+
+const FILTER_SELECT_CLASS =
+  "rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-methanova-gold";
+
 export function QuotationPage() {
-  const { data, isLoading, error } = quotationsApi.useList();
+  const url = useUrlFilters(["status", "open"] as const);
+  const { data, isLoading, error } = quotationsApi.useList(url.filters);
+  const statusSelectValue = url.filters.open ? OPEN_OPTION : (url.filters.status ?? "");
   const transition = quotationsApi.useTransition();
   const toast = useToast();
   const leadLabels = useLeadLabels();
@@ -118,7 +127,27 @@ export function QuotationPage() {
           New quotation
         </Button>
       </PageHeader>
-      <FilterBar search={search} onSearchChange={setSearch} placeholder="Search by lead name, code or status…" />
+      <FilterBar search={search} onSearchChange={setSearch} placeholder="Search by lead name, code or status…">
+        <select
+          aria-label="Filter by status"
+          className={FILTER_SELECT_CLASS}
+          value={statusSelectValue}
+          onChange={(event) => {
+            const value = event.target.value;
+            url.replace(
+              value === OPEN_OPTION ? { open: "1", status: undefined } : { status: value || undefined, open: undefined },
+            );
+          }}
+        >
+          <option value="">All statuses</option>
+          <option value={OPEN_OPTION}>Open (not accepted, rejected or superseded)</option>
+          {QUOTATION_STATUS_ORDER.map((status) => (
+            <option key={status} value={status}>
+              {status.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
+      </FilterBar>
       {actionError && (
         <p role="alert" className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-600/20">
           {actionError}
@@ -132,7 +161,9 @@ export function QuotationPage() {
         emptyHint={
           search
             ? emptyStateMessage({ entityLabel: "quotations", hasSearch: true })
-            : {
+            : url.active
+              ? { message: "No quotations match this filter." }
+              : {
                 message: "No quotations yet. A priced proposal appears here once one is issued against a lead.",
                 action: { label: "New quotation", onClick: () => setCreateOpen(true) },
               }

@@ -1,4 +1,12 @@
+import { QuotationStatus } from "@methanova/shared-types";
 import { z } from "zod";
+import { flagParam, statusListParam } from "../../../utils/query.js";
+
+/** `?open=1` is every non-terminal status — the same rule as the dashboard's Open Quotations KPI. */
+export const listQuotationsQuerySchema = z.object({
+  status: statusListParam(QuotationStatus).optional(),
+  open: flagParam.optional(),
+});
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid id");
 

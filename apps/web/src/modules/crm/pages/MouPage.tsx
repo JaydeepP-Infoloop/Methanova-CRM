@@ -1,4 +1,4 @@
-import { AccessLevel, AppModule, canAccess, MouStatus, nextStates } from "@methanova/shared-types";
+import { AccessLevel, AppModule, canAccess, MOU_STATUS_ORDER, MouStatus, nextStates } from "@methanova/shared-types";
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -16,6 +16,7 @@ import { useToast } from "../../../components/Toast";
 import { ApiError } from "../../../lib/apiClient";
 import { emptyStateMessage } from "../../../lib/emptyState";
 import { formatPaise } from "../../../lib/formatters";
+import { useUrlFilters } from "../../../lib/useUrlFilters";
 import { useUpdateMouApprovalSettings } from "../../admin/api/reference.api";
 import { useLeadLabels } from "../api/lead-lookup";
 import { useMouApprovalSettings } from "../api/masters.api";
@@ -23,10 +24,17 @@ import { mouApi } from "../api/mou.api";
 import { CreateMouModal } from "../components/CreateMouModal";
 import type { MouRow } from "../types";
 
+/** The Dashboard's "MOUs in progress" count — DRAFT plus SENT, as one server-side filter. */
+const MOU_IN_PROGRESS = `${MouStatus.DRAFT},${MouStatus.SENT}`;
+
+const FILTER_SELECT_CLASS =
+  "rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-methanova-gold";
+
 export function MouPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { data, isLoading, error } = mouApi.useList();
+  const url = useUrlFilters(["status"] as const);
+  const { data, isLoading, error } = mouApi.useList(url.filters);
   const transition = mouApi.useTransition();
   const toast = useToast();
   const leadLabels = useLeadLabels();
@@ -118,7 +126,22 @@ export function MouPage() {
 
       {canManageThreshold && <ApprovalThresholdCard />}
 
-      <FilterBar search={search} onSearchChange={setSearch} placeholder="Search MOUs by code or status…" />
+      <FilterBar search={search} onSearchChange={setSearch} placeholder="Search MOUs by code or status…">
+        <select
+          aria-label="Filter by status"
+          className={FILTER_SELECT_CLASS}
+          value={url.filters.status ?? ""}
+          onChange={(event) => url.replace({ status: event.target.value || undefined })}
+        >
+          <option value="">All statuses</option>
+          <option value={MOU_IN_PROGRESS}>In progress (Draft or Sent)</option>
+          {MOU_STATUS_ORDER.map((status) => (
+            <option key={status} value={status}>
+              {status.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
+      </FilterBar>
       <ResourceTable
         rows={rows}
         columns={columns}
@@ -127,7 +150,9 @@ export function MouPage() {
         emptyHint={
           search
             ? emptyStateMessage({ entityLabel: "MOUs", hasSearch: true })
-            : {
+            : url.active
+              ? { message: "No MOUs match this filter." }
+              : {
                 message: "No MOUs yet. Create one against a quotation the client has accepted.",
                 action: { label: "New MOU", onClick: () => setCreateOpen(true) },
               }

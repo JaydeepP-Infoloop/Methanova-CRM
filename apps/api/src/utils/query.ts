@@ -24,6 +24,21 @@ export const listFilterFields = {
   portfolio: z.string().trim().min(1).optional(),
 };
 
+/**
+ * `?status=DRAFT,SENT` → `["DRAFT", "SENT"]`, each checked against the enum.
+ * One unknown value fails the whole param (400) rather than silently
+ * dropping it and returning a broader list than was asked for.
+ */
+export function statusListParam<T extends Record<string, string>>(statusEnum: T) {
+  const allowed = z.nativeEnum(statusEnum);
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) => value.split(",").map((part) => part.trim()).filter(Boolean))
+    .pipe(z.array(allowed).min(1));
+}
+
 export function toObjectIds(ids: Iterable<unknown>): mongoose.Types.ObjectId[] {
   return [...ids].map((id) => new mongoose.Types.ObjectId(String(id)));
 }

@@ -129,7 +129,8 @@ Companion docs: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for what the system d
   - **Quick actions:** New lead, Log activity (now with a lead picker), New quotation, New MOU, New progress update (new `LogProgressModal`, also on the Progress Updates page). Each shows only with WRITE on its module.
   - **Drill-downs:** every count and row opens its source list through the query string, filtered on the server (`useUrlFilters` → `useList(params)` → list-endpoint filters), with a `UrlFilterNotice` offering "Show all".
   - **Verified live:** 47 API checks on a four-project test dataset, plus browser click-through.
-  - **Links not yet filterable:** "Parked due for revisit", and the MOU/quotation counts (those pages have no filter support).
+  - **MOU and Quotation pages** have a server-side status filter driven by the URL (`?status=`, comma list allowed; quotations also `?open=1`). The Signed MOUs, MOUs in progress and Open quotations links land on it, and each list's count matches its dashboard figure.
+  - **Link not yet filterable:** "Parked due for revisit" (the lead list has no parked filter).
 - [ ] **Deferred — separate P2/P3 scope per the SoW, not unfinished dashboard work:** WhatsApp notifications, scheduled report delivery, e-invoicing-driven figures, client-portal data (and a client-scoped dashboard), offline site capture, and a TERMINATED project state (no lifecycle transition exists to end a project).
 - [ ] Reporting endpoints
 - [ ] **CRM Reports**

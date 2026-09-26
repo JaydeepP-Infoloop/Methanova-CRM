@@ -4,8 +4,13 @@ import { applyActor } from "../../../db/plugins/audit.plugin.js";
 import { HttpError } from "../../../utils/http.js";
 import { QuotationModel } from "./quotations.model.js";
 
-export async function listQuotations() {
-  return QuotationModel.find().sort({ createdAt: -1 }).limit(100);
+export async function listQuotations(filters: { status?: string[]; open?: boolean } = {}) {
+  const clauses: Record<string, unknown>[] = [];
+  if (filters.status) clauses.push({ status: { $in: filters.status } });
+  if (filters.open) clauses.push({ status: { $nin: TERMINAL_QUOTATION_STATUSES } });
+  return QuotationModel.find(clauses.length ? { $and: clauses } : {})
+    .sort({ createdAt: -1 })
+    .limit(100);
 }
 
 /**
