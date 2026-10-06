@@ -30,6 +30,7 @@ export const config = {
   leadFirstResponseSlaDays: Number(process.env.LEAD_FIRST_RESPONSE_SLA_DAYS ?? 2),
 } as const;
 
-if (!config.mongoUri.includes("replicaSet")) {
+// Atlas `mongodb+srv://` URIs discover the replica set via DNS, so they don't carry `replicaSet`.
+if (!config.mongoUri.startsWith("mongodb+srv://") && !config.mongoUri.includes("replicaSet")) {
   throw new Error("MONGODB_URI must include replicaSet so multi-document transactions are available");
 }
