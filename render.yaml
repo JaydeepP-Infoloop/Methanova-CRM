@@ -1,0 +1,63 @@
+# Render Blueprint: New → Blueprint → pick this repo.
+# Secrets marked `sync: false` are prompted for in the Render dashboard, never stored here.
+services:
+  - type: web
+    name: methanova-api
+    runtime: node
+    region: singapore
+    # Demo plan: sleeps when idle and has no persistent disk, so uploads
+    # (<cwd>/uploads) are lost on every deploy/restart. For production switch to
+    # `plan: starter` and add a disk at /opt/render/project/src/apps/api/uploads.
+    plan: free
+    branch: main
+    buildCommand: pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@methanova/api
+    startCommand: pnpm --filter @methanova/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: API_PORT
+        value: "10000"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL_MS
+        value: "604800000"
+      - key: MONGODB_URI
+        sync: false
+      - key: WEB_ORIGIN
+        value: https://methanova-web.onrender.com
+      - key: SEED_ADMIN_EMAIL
+        value: admin@methanova.in
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: LEAD_FIRST_RESPONSE_SLA_DAYS
+        value: "2"
+
+  # The web app calls /api, /auth and /health on its own origin, so the static
+  # site proxies those to the API — same-origin cookies, no CORS.
+  - type: web
+    name: methanova-web
+    runtime: static
+    branch: main
+    buildCommand: pnpm install --frozen-lockfile && pnpm turbo run build --filter=@methanova/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://methanova-api.onrender.com/api/*
+      - type: rewrite
+        source: /auth/*
+        destination: https://methanova-api.onrender.com/auth/*
+      - type: rewrite
+        source: /health
+        destination: https://methanova-api.onrender.com/health
+      - type: rewrite
+        source: /*
+        destination: /index.html
